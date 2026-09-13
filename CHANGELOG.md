@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-09-08
+
 ### Fixed
 - The MCP `serverInfo.version` reported to clients was hardcoded to `1.1.0`; it now
   follows the Maven project version (`application.yml` is filtered at build time).
@@ -111,7 +113,8 @@ Initial release.
 ### Changed
 - Logging migrated to `logback-spring.xml`; agent command handling updated for modal dialogs.
 
-[Unreleased]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.2...HEAD
+[Unreleased]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.3...HEAD
+[1.2.3]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.2...V1.2.3
 [1.2.2]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.1...V1.2.2
 [1.2.1]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.0...V1.2.1
 [1.2.0]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.1.0...V1.2.0
