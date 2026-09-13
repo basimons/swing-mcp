@@ -3,14 +3,16 @@
 > Detailed per-category documentation lives under [docs/tools](tools/README.md).
 > This page is a single-page quick reference.
 
-The Swing MCP server exposes the following tools over the MCP stdio transport.
+The Swing MCP server exposes the following tools over the MCP stdio transport. They apply to both
+supported toolkits: component uids are prefixed `comp-` for Swing and `fx-` for JavaFX, and a command
+is routed to whichever toolkit issued the uid it carries. `evaluate_java` and `drag` are Swing-only.
 Component `uid` values come from `take_snapshot`; take a fresh snapshot after any
 action that changes the UI.
 
 ## Application lifecycle
 
 ### `launch_app`
-Launch a Swing application with the swing-mcp agent preloaded via `-javaagent`.
+Launch a Java desktop application (Swing or JavaFX) with the swing-mcp agent preloaded via `-javaagent`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -22,12 +24,12 @@ Returns session info (session id, mode, PID, agent port). The new session
 becomes the active one.
 
 ### `attach_to_app`
-Attach the agent to an already-running Swing JVM by PID. The target keeps
+Attach the agent to an already-running Java desktop JVM by PID. The target keeps
 running when the session is closed.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `pid` | number | yes | Process id of the target Swing JVM |
+| `pid` | number | yes | Process id of the target JVM |
 | `sessionId` | string | no | Session id; auto-generated when omitted |
 
 ### `stop_app`
@@ -56,7 +58,8 @@ Get the status of the active session: `connected`, `sessionId`,
 ## Inspection
 
 ### `take_snapshot`
-Take a snapshot of the active window's Swing component tree. Every component
+Take a snapshot of the active window's component tree. In JavaFX a `Control` is reported as a single
+node and its skin sub-graph is omitted. Every component
 gets a stable UID (e.g. `comp-42`) used by the interaction tools.
 
 | Parameter | Type | Required | Description |

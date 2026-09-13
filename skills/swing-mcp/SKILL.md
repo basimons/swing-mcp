@@ -1,19 +1,23 @@
 ---
 name: swing-mcp
-description: Uses Swing MCP for efficient debugging, troubleshooting and automation of Java Swing applications. Use when inspecting Swing UIs, automating UI interactions, extracting data from tables/lists/trees, or verifying Swing application behavior.
+description: Uses Swing MCP for efficient debugging, troubleshooting and automation of Java desktop applications built with Swing or JavaFX. Use when inspecting a Swing or JavaFX UI, automating UI interactions, extracting data from tables/lists/trees, or verifying desktop application behavior.
 ---
 
 ## Core Concepts
 
-**Application lifecycle**: Tools operate on a session that connects the MCP server to the swing-mcp agent inside the target JVM. Start a session with `launch_app` (starts a new JVM with the agent preloaded via `-javaagent`) or `attach_to_app` (loads the agent into an already-running Swing JVM by PID). End it with `stop_app` — a launched application is terminated, an attached one is only disconnected.
+**Application lifecycle**: Tools operate on a session that connects the MCP server to the swing-mcp agent inside the target JVM. Start a session with `launch_app` (starts a new JVM with the agent preloaded via `-javaagent`) or `attach_to_app` (loads the agent into an already-running Java desktop JVM by PID). End it with `stop_app` — a launched application is terminated, an attached one is only disconnected.
 
 **Session selection**: Tools operate on the currently active session. Use `list_sessions` to see open sessions, then `select_session` to switch. Check connectivity with `app_status`.
 
 **Window selection**: Inspection and interaction tools operate on the active window. Use `list_windows` to see visible windows, then `select_window` to switch context (this also brings the window to front).
 
-**Component interaction**: Use `take_snapshot` to get the Swing component tree with component `uid`s (e.g. `comp-42`). Each component has a stable UID used by interaction tools such as `click` and `fill`. If a component isn't found, take a fresh snapshot — UIDs from an older snapshot may be stale after the UI changed.
+**Toolkits**: Swing and JavaFX are both supported through the same tools — never ask the user which one they are on, just take a snapshot. Uids say which toolkit owns a component: `comp-42` is Swing, `fx-7` is JavaFX. An application can have both at once (a `JFXPanel` inside a Swing frame); pass a uid back exactly as given and it is routed correctly. `evaluate_java` and `drag` are Swing-only and will say so on JavaFX.
 
-**Event Dispatch Thread**: Every command is executed on the Swing EDT inside the target JVM, so interactions behave like real user actions and are safe with respect to Swing's threading rules.
+**Component interaction**: Use `take_snapshot` to get the UI component tree with component `uid`s (e.g. `comp-42` or `fx-7`). Each component has a stable UID used by interaction tools such as `click` and `fill`. If a component isn't found, take a fresh snapshot — UIDs from an older snapshot may be stale after the UI changed.
+
+**UI thread**: Every command is executed on the owning toolkit's UI thread inside the target JVM — the Event Dispatch Thread for Swing, the JavaFX Application Thread for JavaFX — so interactions behave like real user actions and respect each toolkit's threading rules.
+
+**JavaFX trees are pre-filtered**: a JavaFX `Control` is reported as a single node. Its skin sub-graph (`LabeledText`, caret and selection `Path` nodes, and similar) is deliberately omitted, because those are rendering details, not things a user can act on. Read a control's value from its snapshot entry or `get_component_details`, not by looking for child nodes.
 
 ## Workflow Patterns
 

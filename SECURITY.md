@@ -9,7 +9,7 @@
 
 ## Security model
 
-swing-mcp is a local development and automation tool. It is designed to run on a developer's machine and to control Swing applications on that same machine. It is **not** intended to be exposed to a network or to untrusted clients.
+swing-mcp is a local development and automation tool. It is designed to run on a developer's machine and to control Java desktop applications (Swing or JavaFX) on that same machine. It is **not** intended to be exposed to a network or to untrusted clients.
 
 Trust boundaries to be aware of:
 

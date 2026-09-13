@@ -41,7 +41,9 @@ The server needs the agent jar to preload (`launch_app`) or dynamically attach (
 
 #### Symptom: `attach_to_app` fails against a running JVM
 
-1. Verify the PID belongs to a **Java** process running a Swing UI (`jps -l` lists candidate JVMs).
+1. Verify the PID belongs to a **Java** process running a Swing or JavaFX UI (`jps -l` lists candidate JVMs).
+   If `take_snapshot` reports no window on an application you can see, the toolkit may not have started yet —
+   JavaFX windows only exist once `Application.start` has run.
 2. JVMs started with `-XX:+DisableAttachMechanism` cannot be attached to — relaunch the app via `launch_app` instead.
 3. The target JVM and the MCP server should run as the same OS user; attaching across users fails.
 

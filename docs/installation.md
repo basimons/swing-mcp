@@ -48,7 +48,7 @@ condensed reference for all clients.
    This produces `swing-mcp-server/target/swing-mcp-server-<version>.jar`
    (the MCP server, stdio transport) and
    `swing-mcp-agent/target/swing-mcp-agent-<version>.jar` (the Java agent
-   injected into the target Swing JVM).
+   injected into the target JVM).
 
 In all examples below, replace `/path/to/…` with the absolute paths to these
 two jars on your machine. On Windows, use paths like
@@ -130,7 +130,7 @@ make it available in every project instead of only the current one.
 }
 ```
 
-Start a new AI Assistant chat; the Swing tools are now offered to the model.
+Start a new AI Assistant chat; the tools are now offered to the model.
 
 ## VS Code (GitHub Copilot)
 

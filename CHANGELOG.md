@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-13
+
+### Added
+- **JavaFX support.** The agent can now drive JavaFX applications as well as Swing
+  ones, through exactly the same tools — a client never names a toolkit. Applications
+  that mix both in one JVM (a `JFXPanel` inside a Swing frame) work too: component
+  uids are prefixed by the toolkit that issued them (`comp-` for Swing, `fx-` for
+  JavaFX) and each command is routed to the toolkit that owns the uid it carries.
+- `UiToolkit` interface in `swing-mcp-common` and `ToolkitRegistry` in the agent,
+  so a further toolkit means implementing one interface rather than touching
+  dispatch. See `docs/adr/0001-multi-toolkit-agent.md`.
+- `swing-mcp-demo-fx`: a JavaFX demo application mirroring the Swing one, plus 17
+  integration tests that drive it through the real toolkit.
+- CI asserts the agent jar contains no JavaFX runtime classes.
+
+### Changed
+- Threading and the modal-dialog fire-and-poll protocol moved from `CommandHandler`
+  into the toolkit, because the rules differ per toolkit. Swing behaviour is
+  unchanged: `SwingToolkit` is a thin adapter over the existing `ComponentScanner`
+  and adds no scanning logic of its own.
+- In a JavaFX snapshot a `Control` is reported as a single node; its skin sub-graph
+  (`LabeledText`, caret and selection `Path` nodes) is omitted as a rendering detail.
+  Controls that hold real content — `ScrollPane`, `TabPane`, `SplitPane`,
+  `TitledPane`, `Accordion`, `ToolBar`, `ButtonBar` — are traversed explicitly.
+- Descriptions, docs and skills now say Swing *and* JavaFX, so clients and models
+  know the capability exists.
+
+### Notes
+- JavaFX is an optional dependency: compiled against at `provided` scope and
+  resolved reflectively, so no `javafx.*` class is loaded in a Swing-only
+  application and the agent jar never bundles a JavaFX runtime.
+- `evaluate_java` and `drag` remain Swing-only; on JavaFX they fail with a message
+  saying so rather than a stack trace.
+
 ## [1.2.3] - 2026-09-08
 
 ### Fixed
@@ -114,6 +148,7 @@ Initial release.
 - Logging migrated to `logback-spring.xml`; agent command handling updated for modal dialogs.
 
 [Unreleased]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.3...HEAD
+[1.3.0]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.3...V1.3.0
 [1.2.3]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.2...V1.2.3
 [1.2.2]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.1...V1.2.2
 [1.2.1]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.0...V1.2.1

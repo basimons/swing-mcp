@@ -9,7 +9,7 @@ same structure as the
 | Skill | Use for |
 |---|---|
 | [swing-mcp](swing-mcp/SKILL.md) | Core concepts and workflow patterns: sessions, snapshots/UIDs, tool selection, dialogs |
-| [swing-ui-testing](swing-ui-testing/SKILL.md) | Testing and verifying Swing apps: forms, tables/trees, menus, dialogs, keyboard navigation |
+| [swing-ui-testing](swing-ui-testing/SKILL.md) | Testing and verifying Swing and JavaFX apps: forms, tables/trees, menus, dialogs, keyboard navigation |
 | [troubleshooting](troubleshooting/SKILL.md) | Diagnosing server, agent, and session failures step by step |
 
 ## Installation

@@ -1,6 +1,6 @@
 ---
 name: swing-ui-testing
-description: Uses Swing MCP to test and verify Java Swing application behavior. Use when writing or executing UI test scenarios against Swing apps - filling forms, verifying tables and trees, exercising menus and dialogs, testing keyboard navigation, and visually verifying results.
+description: Uses Swing MCP to test and verify Java desktop application behavior, in Swing or JavaFX. Use when writing or executing UI test scenarios against Swing or JavaFX apps - filling forms, verifying tables and trees, exercising menus and dialogs, testing keyboard navigation, and visually verifying results.
 ---
 
 ## Core Concepts
@@ -9,7 +9,7 @@ description: Uses Swing MCP to test and verify Java Swing application behavior. 
 
 **Fresh snapshots**: Component UIDs come from `take_snapshot` and can go stale after any action that changes the UI. Re-snapshot before asserting on state, and whenever an interaction fails to find a component.
 
-**Assert via the model, not pixels**: Prefer `get_component_details`, `get_table_data`, and `get_list_items` for assertions — they read the actual Swing model state. Use `take_screenshot` only for visual verification.
+**Assert via the model, not pixels**: Prefer `get_component_details`, `get_table_data`, and `get_list_items` for assertions — they read the actual component model state. Use `take_screenshot` only for visual verification.
 
 ## Workflow Patterns
 

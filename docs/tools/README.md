@@ -3,7 +3,7 @@
 The Swing MCP server exposes automation tools over the MCP stdio transport.
 Each tool call is translated into a JSON line command, forwarded over a
 localhost-only socket to the agent inside the target JVM, and executed on the
-Swing Event Dispatch Thread (EDT).
+owning toolkit's UI thread — the Swing Event Dispatch Thread (EDT), or the JavaFX Application Thread.
 
 For instructions on registering the server with your MCP client (IntelliJ
 IDEA, VS Code, Claude Desktop, Claude Code, Cursor, Windsurf), see the

@@ -5,9 +5,11 @@
 [![CI](https://github.com/crosstech-solutions-bv/swing-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/crosstech-solutions-bv/swing-mcp/actions/workflows/ci.yml)
 [![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.crosstech--solutions--bv%2Fswing--mcp-38a9dc)](https://registry.modelcontextprotocol.io)
 
-**Let AI assistants operate Java Swing desktop applications** — snapshot the UI, click, type, fill forms, read tables and trees, drive menus and dialogs. Inspired by [chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp), but targeting any Swing UI instead of HTML pages.
+**Let AI assistants operate Java desktop applications — Swing and JavaFX** — snapshot the UI, click, type, fill forms, read tables and trees, drive menus and dialogs. Inspired by [chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp), but targeting a running Java UI instead of HTML pages.
 
-A huge amount of business software is Java desktop software — internal tools, ERP clients, point-of-sale, lab and logistics systems — with no API and no web UI. Swing MCP gives that software a safe, permissioned door into the AI era: assistants like Claude can see the interface and act in it, without changing the application itself.
+One set of tools drives either toolkit, and both at once in applications that mix them — you never tell it which you are using.
+
+A huge amount of business software is Java desktop software — internal tools, ERP clients, point-of-sale, lab and logistics systems — with no API and no web UI, written in Swing and increasingly in JavaFX. Swing MCP gives that software a safe, permissioned door into the AI era: assistants like Claude can see the interface and act in it, without changing the application itself.
 
 ![swing-mcp driving the demo app: snapshots, clicks, form filling, tables, trees, menus, and dialogs](docs/demo.gif)
 
@@ -16,7 +18,7 @@ A huge amount of business software is Java desktop software — internal tools, 
 1. Make sure **JDK 21+** is on your `PATH`.
 2. Download `swing-mcp.mcpb` from the [latest release](https://github.com/crosstech-solutions-bv/swing-mcp/releases).
 3. Open the file — Claude Desktop installs it as an extension.
-4. Ask Claude to `launch_app` your Swing application (or `attach_to_app` a running one by PID) and take it from there.
+4. Ask Claude to `launch_app` your application (or `attach_to_app` a running one by PID) and take it from there.
 
 Using another MCP client? One guide and a one-minute video per client — Claude Code, VS Code + Copilot, Cursor, Devin Desktop (Windsurf), IntelliJ IDEA, Codex CLI, Gemini CLI: [docs/installation.md](docs/installation.md) · [videos](https://crosstech.solutions/swing-mcp#clients). Prefer the long version? [3-minute install-and-first-use video](https://crosstech.solutions/swing-mcp#video).
 
@@ -24,20 +26,23 @@ Using another MCP client? One guide and a one-minute video per client — Claude
 
 ## Modules
 
-- `swing-mcp-server` — Spring Boot MCP server (stdio transport) exposing Swing automation tools.
-- `swing-mcp-agent` — Java agent loaded into the target Swing JVM (at launch via `-javaagent`, or dynamically by PID). Runs a localhost-only JSON line-protocol socket server that executes commands on the Swing EDT.
-- `swing-mcp-common` — Shared command/DTO types between server and agent.
+- `swing-mcp-server` — Spring Boot MCP server (stdio transport) exposing the automation tools.
+- `swing-mcp-agent` — Java agent loaded into the target JVM (at launch via `-javaagent`, or dynamically by PID). Runs a localhost-only JSON line-protocol socket server. Contains one `UiToolkit` implementation per supported toolkit and routes each command to the right one; see [docs/adr/0001-multi-toolkit-agent.md](docs/adr/0001-multi-toolkit-agent.md).
+- `swing-mcp-common` — Shared command/DTO types and the `UiToolkit` interface.
 - `swing-mcp-demo` — Demo Swing application used for integration testing.
+- `swing-mcp-demo-fx` — Demo JavaFX application used for integration testing.
 
 ## How it works
 
 ```
 MCP client (stdio) ──▶ swing-mcp-server ──localhost socket──▶ swing-mcp-agent (inside target JVM) ──▶ Swing EDT
+                                                                                         └──▶ JavaFX Application Thread
 ```
 
 1. The MCP client calls `launch_app` (starts a JVM with the agent preloaded) or `attach_to_app` (loads the agent into a running JVM by PID).
 2. The agent binds a loopback-only port in `swing.mcp.agent-port-min..max` and reports it back through a response file.
-3. Tools such as `take_snapshot`, `click`, and `fill` are forwarded as JSON line commands and executed on the Event Dispatch Thread.
+3. Tools such as `take_snapshot`, `click`, and `fill` are forwarded as JSON line commands and executed on the owning toolkit's UI thread — the Event Dispatch Thread for Swing, the JavaFX Application Thread for JavaFX.
+4. Component uids are prefixed by the toolkit that issued them (`comp-` for Swing, `fx-` for JavaFX), which is how a mixed application stays unambiguous.
 
 See [docs/tools](docs/tools/README.md) for the full tool documentation (per-category pages), or [docs/tool-reference.md](docs/tool-reference.md) for the single-page quick reference.
 
@@ -53,7 +58,8 @@ Requires JDK 21+ and Maven.
 mvn verify
 ```
 
-GUI integration tests are skipped in headless environments; CI runs them under `xvfb`.
+GUI integration tests are skipped in headless environments; CI runs them under `xvfb`. The JavaFX
+integration tests run in the `verify` phase via failsafe, so `mvn test` alone will not exercise them.
 
 ## Running
 
@@ -78,7 +84,8 @@ Claude Desktop, Claude Code, VS Code, Cursor, Devin Desktop, IntelliJ IDEA, Code
 
 Try it against the demo app:
 
-1. `launch_app` with `java -jar swing-mcp-demo/target/swing-mcp-demo-1.2.2.jar`
+1. `launch_app` with `java -jar swing-mcp-demo/target/swing-mcp-demo-1.3.0.jar`
+   (or the JavaFX demo: `swing-mcp-demo-fx/target/swing-mcp-demo-fx-1.3.0.jar`)
 2. `take_snapshot` to discover component UIDs
 3. `click`, `fill`, `select_option`, … to interact
 
