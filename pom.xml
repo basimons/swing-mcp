@@ -13,6 +13,7 @@
         <module>swing-mcp-agent</module>
         <module>swing-mcp-server</module>
         <module>swing-mcp-demo</module>
+        <module>swing-mcp-demo-fx</module>
     </modules>
 
     <properties>
@@ -25,6 +26,7 @@
         <junit.version>5.12.0</junit.version>
         <mockito.version>5.16.0</mockito.version>
         <jackson.version>2.18.2</jackson.version>
+        <javafx.version>21.0.5</javafx.version>
     </properties>
 
     <dependencyManagement>

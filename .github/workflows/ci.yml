@@ -25,6 +25,20 @@ jobs:
       - name: Build and test (with virtual display)
         run: xvfb-run --auto-servernum mvn -B verify
 
+      # The agent is attached to someone else's application, so it must never
+      # carry a JavaFX runtime of its own: JavaFX is compiled against at
+      # provided scope and resolved reflectively at runtime. Shading it in would
+      # risk clashing with the target application's own JavaFX version.
+      - name: Assert the agent jar bundles no JavaFX runtime
+        run: |
+          JAR=$(ls swing-mcp-agent/target/swing-mcp-agent-*.jar)
+          if unzip -l "$JAR" | grep -qE ' javafx/'; then
+            echo "::error::JavaFX runtime classes were shaded into $JAR"
+            unzip -l "$JAR" | grep ' javafx/' | head
+            exit 1
+          fi
+          echo "OK: $JAR carries no javafx/ entries"
+
       - name: Upload agent jar
         uses: actions/upload-artifact@v4
         with:

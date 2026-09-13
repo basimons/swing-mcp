@@ -24,6 +24,16 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
+        <!-- JavaFX is an OPTIONAL target toolkit: compiled against, never bundled.
+             The agent is attached to someone else's application, so it must load
+             and run unchanged when JavaFX is absent. ToolkitRegistry resolves
+             JavaFxToolkit by name only after probing for javafx.application.Platform. -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+            <version>${javafx.version}</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
