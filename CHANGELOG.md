@@ -53,6 +53,9 @@ Nothing yet.
   for stripping in a follow-up.
 - `additionalProperties: false` is no longer emitted on input schemas (scanner
   behaviour); property names, types, descriptions and `required` arrays are unchanged.
+- Registry one-liner shortened to fit the MCP Registry's 100-character limit;
+  `RegistryMetadataTest` enforces it and keeps `server.json` and `mcpb/manifest.json`
+  in step.
 
 ### Notes
 - JavaFX is an optional dependency: compiled against at `provided` scope and
