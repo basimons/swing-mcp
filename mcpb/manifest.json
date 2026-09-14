@@ -24,7 +24,10 @@
   "screenshots": [
     "assets/screenshot-forms.png",
     "assets/screenshot-table.png",
-    "assets/screenshot-dialog.png"
+    "assets/screenshot-dialog.png",
+    "assets/screenshot-fx-forms.png",
+    "assets/screenshot-fx-table.png",
+    "assets/screenshot-fx-dialog.png"
   ],
   "license": "MIT",
   "keywords": [
@@ -64,9 +67,9 @@
     { "name": "app_status", "description": "Report the status of the current session" },
     { "name": "take_snapshot", "description": "Snapshot the UI component tree with component UIDs (Swing or JavaFX)" },
     { "name": "get_component_details", "description": "Get detailed properties of a component by UID" },
-    { "name": "find_component", "description": "Find components by text, name, tooltip, or class" },
-    { "name": "get_table_data", "description": "Read the contents of a JTable" },
-    { "name": "get_list_items", "description": "Read the items of a JList or JTree" },
+    { "name": "find_component", "description": "Find components by text, name, tooltip, or class (Swing or JavaFX)" },
+    { "name": "get_table_data", "description": "Read the contents of a table (JTable or TableView)" },
+    { "name": "get_list_items", "description": "Read the items of a list or tree (JList/JTree or ListView/TreeView)" },
     { "name": "list_windows", "description": "List open windows" },
     { "name": "select_window", "description": "Bring a window to the front" },
     { "name": "resize_window", "description": "Resize a window" },
@@ -79,14 +82,14 @@
     { "name": "hover", "description": "Hover over a component" },
     { "name": "focus", "description": "Focus a component" },
     { "name": "type_text", "description": "Type text via keyboard events" },
-    { "name": "fill", "description": "Set the value of a text field, spinner, or slider" },
-    { "name": "select_option", "description": "Select an option in a combo box or list" },
-    { "name": "select_tree_node", "description": "Select a JTree node by path" },
-    { "name": "select_table_cell", "description": "Select a JTable cell" },
+    { "name": "fill", "description": "Set the value of a text field or spinner (Swing or JavaFX), or a Swing slider" },
+    { "name": "select_option", "description": "Select an option in a combo box, choice box, list or tab pane" },
+    { "name": "select_tree_node", "description": "Select a tree node by path (JTree or TreeView)" },
+    { "name": "select_table_cell", "description": "Select a table cell (JTable or TableView)" },
     { "name": "select_menu_item", "description": "Invoke a menu item by path" },
     { "name": "select_context_menu_item", "description": "Invoke a context (right-click) menu item" },
     { "name": "press_key", "description": "Press a key or key combination" },
-    { "name": "drag", "description": "Drag from one component to another" },
+    { "name": "drag", "description": "Drag from one component to another (Swing only)" },
     { "name": "scroll", "description": "Scroll a component" },
     { "name": "list_dialogs", "description": "List open dialogs" },
     { "name": "handle_dialog", "description": "Click a button in an open dialog" },
@@ -94,7 +97,7 @@
     { "name": "set_clipboard", "description": "Write to the system clipboard" },
     { "name": "take_screenshot", "description": "Capture a screenshot of a window or component" },
     { "name": "wait_for", "description": "Wait for a UI condition" },
-    { "name": "evaluate_java", "description": "Evaluate Java code in the target JVM (disabled by default)" }
+    { "name": "evaluate_java", "description": "Evaluate Java code in the target JVM (Swing sessions only; disabled by default)" }
   ],
   "compatibility": {
     "platforms": [

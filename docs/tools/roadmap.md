@@ -19,6 +19,8 @@ implemented:
 | Additional `wait_for` conditions | `COMPONENT_EXISTS`, `COMPONENT_GONE`, `WINDOW_COUNT`, `EDT_IDLE` — [utilities.md](utilities.md) |
 | Inline screenshot image content | `take_screenshot` `returnImage` parameter — [screenshots.md](screenshots.md) |
 | Multiple concurrent sessions | Named sessions with `list_sessions` / `select_session` — [application.md](application.md) |
+| JavaFX support | 1.3.0 — same tools, `fx-` uids, see [../adr/0001-multi-toolkit-agent.md](../adr/0001-multi-toolkit-agent.md) |
+| Tool annotations | 1.3.0 — [README.md#tool-annotations](README.md#tool-annotations) |
 
 Ideas for future tools are welcome — please open an issue describing the
 intended behaviour.

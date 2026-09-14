@@ -5,7 +5,7 @@ interaction tools rely on component UIDs produced by `take_snapshot`.
 
 ## `take_snapshot`
 
-Take a snapshot of the active window's Swing component tree. Every component
+Take a snapshot of the active window's component tree. Every component
 gets a stable UID (e.g. `comp-42`) that interaction tools use to address it.
 
 | Parameter | Type | Required | Description |
@@ -25,6 +25,11 @@ text/label, and key state flags. When the tree was cut short by `maxNodes` or
   snapshots may no longer resolve.
 - With a filter, containers that do not match are still included when they
   have matching descendants, so the tree structure is preserved.
+- UIDs are prefixed by the toolkit that owns the component: `comp-` for Swing,
+  `fx-` for JavaFX. In a JavaFX snapshot, a `Control` is reported as a single
+  node with its skin sub-graph omitted; content-bearing containers —
+  `ScrollPane`, `TabPane`, `SplitPane`, `TitledPane`, `Accordion`, `ToolBar`,
+  `ButtonBar` — are traversed as normal.
 
 ## `get_component_details`
 
@@ -53,11 +58,12 @@ UIDs, class, text, and bounds.
 
 ## `get_table_data`
 
-Extract the model contents of a `JTable` as structured data.
+Extract the model contents of a `JTable` (Swing) or `TableView` (JavaFX) as
+structured data.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `uid` | string | yes | JTable component UID |
+| `uid` | string | yes | `JTable` (Swing) or `TableView` (JavaFX) component UID |
 | `startRow` | number | no | Zero-based first row (inclusive) |
 | `endRow` | number | no | Zero-based last row (inclusive) |
 
@@ -65,14 +71,14 @@ Extract the model contents of a `JTable` as structured data.
 
 ## `get_list_items`
 
-Extract the items of a `JList` or the visible rows of a `JTree` as structured
-data.
+Extract the items of a `JList`/`ListView` or the visible rows of a
+`JTree`/`TreeView` as structured data.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `uid` | string | yes | JList or JTree component UID |
+| `uid` | string | yes | `JList`/`JTree` (Swing) or `ListView`/`TreeView` (JavaFX) component UID |
 | `startIndex` | number | no | Zero-based first item (inclusive) |
 | `endIndex` | number | no | Zero-based last item (inclusive) |
 
-**Returns:** `itemCount` and `items`. For a `JTree`, items are the visible
-rows rendered as ` > `-separated paths.
+**Returns:** `itemCount` and `items`. For a `JTree`/`TreeView`, items are the
+visible rows rendered as ` > `-separated paths.

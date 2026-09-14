@@ -99,3 +99,26 @@ definitions are charged to context on every request. This ADR deliberately keeps
 the surface fixed so that adding a toolkit changes nothing for existing clients;
 consolidating it is a separate, breaking decision that needs its own ADR and a
 deprecation path.
+
+## Addendum 2026-09-14 — tool annotations
+
+Every tool now declares MCP tool annotations. The classification rule, so it stays
+consistent as tools are added:
+
+- `readOnlyHint = true` for tools that only observe: snapshots, finds, reads, lists,
+  status, screenshot, `wait_for`. These are also `idempotentHint = true`.
+- `destructiveHint = true` only for tools whose **own** effect is irreversible regardless
+  of the target application: `stop_app`, `close_window`, `evaluate_java`. Generic
+  interaction tools (`click`, `type_text`, `handle_dialog`, …) are *not* marked
+  destructive, because their effect belongs to the application, not the tool — a click
+  on "Delete all" is destructive and a click on "Cancel" is not, and the tool cannot
+  tell. Clients should still treat non-read-only tools as needing care.
+- `idempotentHint = true` for set-style writes whose repetition is harmless (`fill`,
+  `select_*`, `focus`, `hover`, window geometry, `set_clipboard`); `false` for anything
+  that fires an action.
+- `openWorldHint = false` everywhere: the server drives one local application.
+
+Cost: `tools/list` grew by ~53% (14.4 KB → 22.1 KB). About 4.5 KB is the annotations —
+the feature — and about 2.1 KB is a `$schema` URL the annotation scanner emits on every
+input schema, which carries no information and should be stripped when there is a clean
+hook for it. `ToolAnnotationsTest` pins the sets above.

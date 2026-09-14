@@ -10,7 +10,8 @@ List all visible windows in the target JVM.
 
 No parameters.
 
-**Returns:** for each window: index, title, class, bounds, and focus state.
+**Returns:** for each window: index, title, class, bounds, focus state,
+`toolkit`, and `windowId`.
 
 ## `select_window`
 
@@ -49,8 +50,8 @@ Change the extended state of the active frame window: maximize it, minimize
 
 No parameters.
 
-**Notes:** the active window must be a `Frame` (e.g. a `JFrame`); dialogs do
-not support extended states.
+**Notes:** the active window must be a `Frame` (e.g. a `JFrame`) or a JavaFX
+`Stage`; dialogs do not support extended states.
 
 ## `close_window`
 

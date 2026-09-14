@@ -9,9 +9,9 @@ For instructions on registering the server with your MCP client (IntelliJ
 IDEA, VS Code, Claude Desktop, Claude Code, Cursor, Windsurf), see the
 [installation guide](../installation.md).
 
-Component `uid` values (e.g. `comp-42`) come from `take_snapshot`. Take a fresh
-snapshot after any action that changes the UI, as UIDs from an older snapshot
-may be stale.
+Component `uid` values (e.g. `comp-42`, or `fx-7` for JavaFX nodes) come from
+`take_snapshot`. Take a fresh snapshot after any action that changes the UI,
+as UIDs from an older snapshot may be stale.
 
 ## Tool categories
 
@@ -72,6 +72,16 @@ may be stale.
 
 All previously planned capabilities have been implemented — see the
 [roadmap](roadmap.md) for the mapping.
+
+## Tool annotations
+
+Every tool carries an MCP `title` and the `readOnlyHint`, `destructiveHint`,
+`idempotentHint`, and `openWorldHint` annotations from the MCP spec. Three
+tools are marked destructive: `stop_app`, `close_window`, and
+`evaluate_java`. 12 tools are read-only — clients that honour these hints
+(Claude Desktop, VS Code, Cursor) can skip per-call approval for them.
+`openWorldHint` is `false` for every tool, since the server only ever touches
+the local JVM.
 
 ## Typical workflow
 

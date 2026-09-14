@@ -23,17 +23,17 @@ description: Uses Swing MCP to test and verify Java desktop application behavior
 ### 2. Form filling and validation
 
 1. `take_snapshot` (optionally `filter: "ENABLED_ONLY"`) to find input fields and buttons.
-2. `fill` each text field, spinner, or editable combo box; use `type_text` when the form relies on key listeners or per-keystroke validation.
+2. `fill` each text field, spinner, or editable combo box (`JTextField`/`JSpinner`/`JComboBox` in Swing, `TextInputControl`/`Spinner`/`ComboBox` in JavaFX); use `type_text` when the form relies on key listeners or per-keystroke validation.
 3. `select_option` for combo boxes and `click` for checkboxes/radio buttons.
 4. Submit with `click` on the confirm button, or `press_key` with `ENTER`.
 5. Verify: `wait_for` a success condition, then check resulting state with `get_component_details` (e.g. an error label's text, or a button becoming enabled/disabled).
 
 ### 3. Tables, lists, and trees
 
-- **Verify data**: `get_table_data` with `startRow`/`endRow` to assert column names and cell values; `get_list_items` for `JList` items or visible `JTree` rows.
+- **Verify data**: `get_table_data` with `startRow`/`endRow` to assert column names and cell values (`JTable` in Swing, `TableView` in JavaFX); `get_list_items` for `JList` items or visible `JTree` rows (`ListView`/`TreeView` in JavaFX).
 - **Select**: `select_table_cell` (row/col), `select_option` (index or visible text), `select_tree_node` with a `Root > Folder > Leaf` path.
 - **Row actions**: after selecting, use `click` with `clickType: "DOUBLE"` to open, or `select_context_menu_item` for the row's context menu.
-- **Long content**: `scroll` inside the `JScrollPane` to reach off-screen rows before interacting via mouse emulation.
+- **Long content**: `scroll` inside the `JScrollPane` (or `ScrollPane` in JavaFX) to reach off-screen rows before interacting via mouse emulation.
 
 ### 4. Menus and dialogs
 
@@ -51,7 +51,7 @@ description: Uses Swing MCP to test and verify Java desktop application behavior
 
 ### 6. Drag and drop, and clipboard
 
-- `drag` from a source UID to a target UID to test drag-and-drop behavior, then verify the result via snapshots or model data.
+- `drag` from a source UID to a target UID to test drag-and-drop behavior (Swing only), then verify the result via snapshots or model data.
 - Use `set_clipboard` + `press_key` with `CTRL+V` to test paste handling, and `get_clipboard` to assert what the app copied after `CTRL+C`.
 
 ### 7. Multi-window scenarios

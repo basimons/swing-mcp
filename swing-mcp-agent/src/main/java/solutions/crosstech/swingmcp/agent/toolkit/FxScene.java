@@ -351,15 +351,16 @@ final class FxScene {
 
     // ---- tabular reads ----------------------------------------------------
 
-    static Map<String, Object> tableData(TableView<?> table, int maxRows) {
+    /** Rows {@code [startRow, endRow)} of the table, clamped to what exists. */
+    static Map<String, Object> tableData(TableView<?> table, int startRow, int endRow) {
         List<String> columns = new ArrayList<>();
         for (TableColumn<?, ?> c : table.getColumns()) {
             columns.add(c.getText());
         }
         List<List<String>> rows = new ArrayList<>();
         int total = table.getItems().size();
-        int limit = Math.min(total, maxRows);
-        for (int r = 0; r < limit; r++) {
+        int limit = Math.min(total, endRow);
+        for (int r = Math.min(startRow, total); r < limit; r++) {
             List<String> row = new ArrayList<>();
             for (TableColumn<?, ?> c : table.getColumns()) {
                 Object v = cellValue(c, r);
@@ -371,6 +372,7 @@ final class FxScene {
         out.put("columns", columns);
         out.put("rows", rows);
         out.put("rowCount", total);
+        out.put("startRow", Math.min(startRow, total));
         if (limit < total) {
             out.put("truncated", true);
         }
@@ -388,11 +390,12 @@ final class FxScene {
         }
     }
 
-    static Map<String, Object> listItems(ListView<?> list, int maxItems) {
+    /** Items {@code [start, end)} of the list, clamped to what exists. */
+    static Map<String, Object> listItems(ListView<?> list, int start, int end) {
         ObservableList<?> items = list.getItems();
         List<String> values = new ArrayList<>();
-        int limit = Math.min(items.size(), maxItems);
-        for (int i = 0; i < limit; i++) {
+        int limit = Math.min(items.size(), end);
+        for (int i = Math.min(start, items.size()); i < limit; i++) {
             Object v = items.get(i);
             values.add(v == null ? null : String.valueOf(v));
         }

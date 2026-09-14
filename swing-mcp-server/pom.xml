@@ -12,7 +12,7 @@
 
     <artifactId>swing-mcp-server</artifactId>
     <packaging>jar</packaging>
-    <description>Spring Boot MCP server for Swing UI automation (stdio transport)</description>
+    <description>Spring Boot MCP server for Swing and JavaFX UI automation (stdio transport)</description>
 
     <dependencies>
         <dependency>

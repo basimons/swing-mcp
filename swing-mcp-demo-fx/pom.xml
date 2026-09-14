@@ -42,6 +42,15 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <version>3.5.2</version>
+                <configuration>
+                    <!-- ServerRoundTripIT drives this demo through the real server over stdio.
+                         The jars come from sibling modules built earlier in the reactor. -->
+                    <systemPropertyVariables>
+                        <swingmcp.server.jar>${project.basedir}/../swing-mcp-server/target/swing-mcp-server-${project.version}.jar</swingmcp.server.jar>
+                        <swingmcp.agent.jar>${project.basedir}/../swing-mcp-agent/target/swing-mcp-agent-${project.version}.jar</swingmcp.agent.jar>
+                        <swingmcp.demofx.jar>${project.build.directory}/${project.build.finalName}.jar</swingmcp.demofx.jar>
+                    </systemPropertyVariables>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>

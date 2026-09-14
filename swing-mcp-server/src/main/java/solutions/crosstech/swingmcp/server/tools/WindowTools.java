@@ -1,8 +1,8 @@
 package solutions.crosstech.swingmcp.server.tools;
 
 import solutions.crosstech.swingmcp.server.service.WindowService;
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.ai.mcp.annotation.McpTool;
+import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
 /**
@@ -17,47 +17,63 @@ public class WindowTools {
         this.windowService = windowService;
     }
 
-    @Tool(name = "list_windows", description = "List all visible windows in the target JVM with their index, title, and bounds.")
+    @McpTool(name = "list_windows",
+        annotations = @McpTool.McpAnnotations(title = "List windows", readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false),
+        description = "List all visible windows in the target JVM with their index, title, and bounds.")
     public String listWindows() {
         return ToolJson.toJson(windowService.listWindows());
     }
 
-    @Tool(name = "select_window", description = "Select the active window by index (from list_windows) and bring it to front.")
+    @McpTool(name = "select_window",
+        annotations = @McpTool.McpAnnotations(title = "Select window", readOnlyHint = false, destructiveHint = false, idempotentHint = true, openWorldHint = false),
+        description = "Select the active window by index (from list_windows) and bring it to front.")
     public String selectWindow(
-            @ToolParam(description = "Window index from list_windows") int index) {
+            @McpToolParam(description = "Window index from list_windows") int index) {
         return ToolJson.toJson(windowService.selectWindow(index));
     }
 
-    @Tool(name = "resize_window", description = "Resize the active window to the given width and height in pixels.")
+    @McpTool(name = "resize_window",
+        annotations = @McpTool.McpAnnotations(title = "Resize window", readOnlyHint = false, destructiveHint = false, idempotentHint = true, openWorldHint = false),
+        description = "Resize the active window to the given width and height in pixels.")
     public String resizeWindow(
-            @ToolParam(description = "New width in pixels", required = false) Integer width,
-            @ToolParam(description = "New height in pixels", required = false) Integer height) {
+            @McpToolParam(description = "New width in pixels", required = false) Integer width,
+            @McpToolParam(description = "New height in pixels", required = false) Integer height) {
         return ToolJson.toJson(windowService.resizeWindow(width, height));
     }
 
-    @Tool(name = "move_window", description = "Move the active window to the given screen position in pixels.")
+    @McpTool(name = "move_window",
+        annotations = @McpTool.McpAnnotations(title = "Move window", readOnlyHint = false, destructiveHint = false, idempotentHint = true, openWorldHint = false),
+        description = "Move the active window to the given screen position in pixels.")
     public String moveWindow(
-            @ToolParam(description = "New x position in pixels", required = false) Integer x,
-            @ToolParam(description = "New y position in pixels", required = false) Integer y) {
+            @McpToolParam(description = "New x position in pixels", required = false) Integer x,
+            @McpToolParam(description = "New y position in pixels", required = false) Integer y) {
         return ToolJson.toJson(windowService.moveWindow(x, y));
     }
 
-    @Tool(name = "maximize_window", description = "Maximize the active frame window.")
+    @McpTool(name = "maximize_window",
+        annotations = @McpTool.McpAnnotations(title = "Maximize window", readOnlyHint = false, destructiveHint = false, idempotentHint = true, openWorldHint = false),
+        description = "Maximize the active frame window.")
     public String maximizeWindow() {
         return ToolJson.toJson(windowService.setWindowState("MAXIMIZED"));
     }
 
-    @Tool(name = "minimize_window", description = "Minimize (iconify) the active frame window.")
+    @McpTool(name = "minimize_window",
+        annotations = @McpTool.McpAnnotations(title = "Minimize window", readOnlyHint = false, destructiveHint = false, idempotentHint = true, openWorldHint = false),
+        description = "Minimize (iconify) the active frame window.")
     public String minimizeWindow() {
         return ToolJson.toJson(windowService.setWindowState("MINIMIZED"));
     }
 
-    @Tool(name = "restore_window", description = "Restore the active frame window to its normal state.")
+    @McpTool(name = "restore_window",
+        annotations = @McpTool.McpAnnotations(title = "Restore window", readOnlyHint = false, destructiveHint = false, idempotentHint = true, openWorldHint = false),
+        description = "Restore the active frame window to its normal state.")
     public String restoreWindow() {
         return ToolJson.toJson(windowService.setWindowState("NORMAL"));
     }
 
-    @Tool(name = "close_window", description = "Close the active window by dispatching a window-closing event.")
+    @McpTool(name = "close_window",
+        annotations = @McpTool.McpAnnotations(title = "Close window", readOnlyHint = false, destructiveHint = true, idempotentHint = false, openWorldHint = false),
+        description = "Close the active window by dispatching a window-closing event.")
     public String closeWindow() {
         return ToolJson.toJson(windowService.closeWindow());
     }

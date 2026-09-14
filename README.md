@@ -20,7 +20,7 @@ A huge amount of business software is Java desktop software — internal tools, 
 3. Open the file — Claude Desktop installs it as an extension.
 4. Ask Claude to `launch_app` your application (or `attach_to_app` a running one by PID) and take it from there.
 
-Using another MCP client? One guide and a one-minute video per client — Claude Code, VS Code + Copilot, Cursor, Devin Desktop (Windsurf), IntelliJ IDEA, Codex CLI, Gemini CLI: [docs/installation.md](docs/installation.md) · [videos](https://crosstech.solutions/swing-mcp#clients). Prefer the long version? [3-minute install-and-first-use video](https://crosstech.solutions/swing-mcp#video).
+Using another MCP client? One guide and a one-minute video per client — Claude Code, VS Code + Copilot, Cursor, Devin Desktop (Windsurf), IntelliJ IDEA, Codex CLI, Gemini CLI: [docs/installation.md](docs/installation.md) · [videos](https://crosstech.solutions/swing-mcp#clients). Prefer the long version? [3-minute install-and-first-use video](https://crosstech.solutions/swing-mcp#video). JavaFX app? [See it driven live](https://crosstech.solutions/swing-mcp#javafx) (96 seconds, every tool call from the real MCP log).
 
 **Need this connected to your own application** — or an MCP connector for other software your business runs? CrossTech builds them: [crosstech.solutions/swing-mcp](https://crosstech.solutions/swing-mcp).
 
@@ -30,7 +30,7 @@ Using another MCP client? One guide and a one-minute video per client — Claude
 - `swing-mcp-agent` — Java agent loaded into the target JVM (at launch via `-javaagent`, or dynamically by PID). Runs a localhost-only JSON line-protocol socket server. Contains one `UiToolkit` implementation per supported toolkit and routes each command to the right one; see [docs/adr/0001-multi-toolkit-agent.md](docs/adr/0001-multi-toolkit-agent.md).
 - `swing-mcp-common` — Shared command/DTO types and the `UiToolkit` interface.
 - `swing-mcp-demo` — Demo Swing application used for integration testing.
-- `swing-mcp-demo-fx` — Demo JavaFX application used for integration testing.
+- `swing-mcp-demo-fx` — Demo JavaFX application used for integration testing (driven both through the toolkit and through the real server over stdio).
 
 ## How it works
 
@@ -43,6 +43,7 @@ MCP client (stdio) ──▶ swing-mcp-server ──localhost socket──▶ sw
 2. The agent binds a loopback-only port in `swing.mcp.agent-port-min..max` and reports it back through a response file.
 3. Tools such as `take_snapshot`, `click`, and `fill` are forwarded as JSON line commands and executed on the owning toolkit's UI thread — the Event Dispatch Thread for Swing, the JavaFX Application Thread for JavaFX.
 4. Component uids are prefixed by the toolkit that issued them (`comp-` for Swing, `fx-` for JavaFX), which is how a mixed application stays unambiguous.
+5. Every tool carries MCP annotations (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), so clients that honour them can wave through the 12 read-only tools and flag `stop_app`, `close_window` and `evaluate_java` before running them.
 
 See [docs/tools](docs/tools/README.md) for the full tool documentation (per-category pages), or [docs/tool-reference.md](docs/tool-reference.md) for the single-page quick reference.
 

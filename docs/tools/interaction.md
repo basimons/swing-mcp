@@ -2,7 +2,8 @@
 
 Tools for interacting with components in the active window. All UID parameters
 come from `take_snapshot` (see [inspection.md](inspection.md)). Actions are
-executed on the Swing Event Dispatch Thread.
+executed on the owning toolkit's UI thread: the Event Dispatch Thread for
+Swing, the JavaFX Application Thread for JavaFX.
 
 ## `click`
 
@@ -48,7 +49,9 @@ per-keystroke listeners, input masks, or autocompletion.
 ## `fill`
 
 Set the text/value of a text component (`JTextField`, `JTextArea`, …),
-`JSpinner`, or editable `JComboBox`.
+`JSpinner`, `JSlider`, or editable `JComboBox` (Swing) — or a
+`TextInputControl` (`TextField`, `PasswordField`, `TextArea`), `Spinner`, or
+editable `ComboBox` (JavaFX).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -57,7 +60,8 @@ Set the text/value of a text component (`JTextField`, `JTextArea`, …),
 
 ## `select_option`
 
-Select an option in a `JList`, `JComboBox`, or `JTabbedPane` by index or
+Select an option in a `JList`, `JComboBox`, or `JTabbedPane` (Swing) — or a
+`ComboBox`, `ChoiceBox`, `ListView`, or `TabPane` (JavaFX) — by index or
 visible text.
 
 | Parameter | Type | Required | Description |
@@ -70,26 +74,27 @@ visible text.
 
 ## `select_tree_node`
 
-Select a `JTree` node by path.
+Select a `JTree` (Swing) or `TreeView` (JavaFX) node by path.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `uid` | string | yes | JTree component UID |
+| `uid` | string | yes | `JTree` (Swing) or `TreeView` (JavaFX) component UID |
 | `path` | string | yes | Node path separated by ` > `, e.g. `Root > Folder > Leaf` |
 
 ## `select_table_cell`
 
-Select a `JTable` cell.
+Select a `JTable` (Swing) or `TableView` (JavaFX) cell.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `uid` | string | yes | JTable component UID |
+| `uid` | string | yes | `JTable` (Swing) or `TableView` (JavaFX) component UID |
 | `row` | number | yes | Zero-based row index |
 | `col` | number | yes | Zero-based column index |
 
 ## `select_menu_item`
 
-Click a menu item in the active window's menu bar.
+Click a menu item in the active window's menu bar (`JMenuBar` for Swing,
+`MenuBar` for JavaFX).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -97,9 +102,10 @@ Click a menu item in the active window's menu bar.
 
 ## `select_context_menu_item`
 
-Open the context menu of a component and click an item by path. The
-component's registered popup menu is used when available; otherwise a
-right-click popup trigger is dispatched.
+Open the context menu of a component and click an item by path
+(`JPopupMenu` for Swing, `ContextMenu` for JavaFX). The component's
+registered popup menu is used when available; otherwise a right-click popup
+trigger is dispatched.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -123,9 +129,12 @@ Drag from one component to another using mouse emulation.
 | `fromUid` | string | yes | Source component UID |
 | `toUid` | string | yes | Target component UID |
 
+**Notes:**
+- Swing only; on a JavaFX uid this fails with an error saying so.
+
 ## `scroll`
 
-Scroll a component inside a `JScrollPane`.
+Scroll a component inside a `JScrollPane` (Swing) or `ScrollPane` (JavaFX).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

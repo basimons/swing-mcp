@@ -1,13 +1,13 @@
 # Application lifecycle tools
 
-Tools for starting, attaching to, and stopping Swing application sessions.
+Tools for starting, attaching to, and stopping Swing or JavaFX application sessions.
 Multiple named sessions can be open concurrently; one of them is the *active*
 session that all other tools operate on. Use `list_sessions` and
 `select_session` to switch between applications.
 
 ## `launch_app`
 
-Launch a Swing application with the swing-mcp agent preloaded via `-javaagent`.
+Launch a Java desktop application (Swing or JavaFX) with the swing-mcp agent preloaded via `-javaagent`.
 The agent binds a loopback-only socket in the configured port range and reports
 it back through a response file.
 
@@ -28,12 +28,12 @@ becomes the active one.
 
 ## `attach_to_app`
 
-Attach the agent to an already-running Swing JVM by PID using dynamic agent
-loading.
+Attach the agent to an already-running Java desktop JVM by PID using dynamic
+agent loading.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `pid` | number | yes | Process id of the target Swing JVM |
+| `pid` | number | yes | Process id of the target JVM |
 | `sessionId` | string | no | Session id; auto-generated when omitted. Reusing an id replaces (and closes) that session |
 
 **Returns:** session info (session id, mode, PID, agent port). The new session
@@ -41,6 +41,8 @@ becomes the active one.
 
 **Notes:**
 - The target JVM must allow dynamic attach.
+- JavaFX windows only exist once `Application.start` has run, so attach after
+  the UI is up.
 - An attached application keeps running when the session is closed — only the
   connection is dropped.
 

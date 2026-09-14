@@ -1,6 +1,6 @@
 ---
 name: troubleshooting
-description: Uses Swing MCP and its documentation to troubleshoot server, agent, and session issues. Trigger this skill when launch_app or attach_to_app fail, when tools report no active session, or when the server initialization fails.
+description: Uses Swing MCP and its documentation to troubleshoot server, agent, and session issues on Swing or JavaFX targets. Trigger this skill when launch_app or attach_to_app fail, when tools report no active session, or when the server initialization fails.
 ---
 
 ## Troubleshooting Wizard
@@ -36,7 +36,7 @@ The server requires **JDK 21+**. Some GUI clients don't inherit the shell `PATH`
 The server needs the agent jar to preload (`launch_app`) or dynamically attach (`attach_to_app`) it.
 
 1. Check that `SWING_MCP_AGENT_JAR` (or the `swing.mcp.agent-jar` property) is set in the MCP server configuration's `env` block.
-2. Confirm the path is **absolute** and the file exists (e.g. `/path/to/swing-mcp/swing-mcp-agent/target/swing-mcp-agent-1.0.0.jar` after `mvn verify`).
+2. Confirm the path is **absolute** and the file exists (e.g. `/path/to/swing-mcp/swing-mcp-agent/target/swing-mcp-agent-1.3.0.jar` after `mvn verify`).
 3. Ask the user to restart the MCP server (or their AI client) after fixing the configuration.
 
 #### Symptom: `attach_to_app` fails against a running JVM
@@ -52,7 +52,13 @@ The server needs the agent jar to preload (`launch_app`) or dynamically attach (
 1. Call `app_status` and `list_sessions` — the session may have died (`alive: false`) or another session may be active; use `select_session` to switch.
 2. The agent binds a **loopback-only** port in the `swing.mcp.agent-port-min..max` range (default 40000–40100). Check that a local firewall or sandbox does not block localhost connections in this range, or change the range.
 3. Long-running UI operations may exceed the round-trip timeout — increase `swing.mcp.tool-timeout-ms` (default 30000).
-4. If the target application blocks the Event Dispatch Thread (e.g. a long computation on the EDT), commands cannot execute; use `wait_for` with `EDT_IDLE` or fix the application.
+4. If the target application blocks its UI thread (the Event Dispatch Thread for Swing, the JavaFX Application Thread for JavaFX — e.g. a long computation running on it), commands cannot execute; use `wait_for` with `EDT_IDLE` or fix the application.
+
+#### Symptom: a JavaFX application snapshots as empty, or uids are `comp-` only
+
+1. The toolkit loads reflectively — JavaFX must be on the target app's class/module path (the agent bundles no JavaFX runtime of its own). Check `list_windows`: each window carries a `toolkit` field, so a `toolkit: "swing"`-only (or empty) result on a JavaFX app points here.
+2. Attach (or launch) only after `Application.start` has run — JavaFX windows don't exist before that, so an early snapshot legitimately finds none.
+3. `drag` and `evaluate_java` are Swing-only; their error message says so when called against a JavaFX-only target.
 
 #### Symptom: `evaluate_java` returns "disabled"
 
@@ -71,9 +77,9 @@ Based on the exact error and the user's environment (OS, MCP client), formulate 
   "mcpServers": {
     "swing": {
       "command": "java",
-      "args": ["-jar", "/absolute/path/to/swing-mcp-server-1.0.0.jar"],
+      "args": ["-jar", "/absolute/path/to/swing-mcp-server-1.3.0.jar"],
       "env": {
-        "SWING_MCP_AGENT_JAR": "/absolute/path/to/swing-mcp-agent-1.0.0.jar"
+        "SWING_MCP_AGENT_JAR": "/absolute/path/to/swing-mcp-agent-1.3.0.jar"
       }
     }
   }
@@ -89,7 +95,7 @@ If the issue is still unclear, run diagnostic commands to test the setup directl
 - `java -version` to verify the JDK is 21+.
 - `java -jar /path/to/swing-mcp-server-*.jar` from a terminal to see startup errors directly.
 - Inspect `${java.io.tmpdir}/swing-mcp-server.log` for stack traces.
-- Test against the bundled demo app: `launch_app` with `java -jar /path/to/swing-mcp-demo-1.0.0.jar`, then `take_snapshot`.
+- Test against the bundled demo app: `launch_app` with `java -jar /path/to/swing-mcp-demo-1.3.0.jar`, then `take_snapshot`.
 
 ### Step 6: Check GitHub for Existing Issues
 

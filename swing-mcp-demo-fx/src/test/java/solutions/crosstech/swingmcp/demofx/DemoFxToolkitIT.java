@@ -138,6 +138,16 @@ class DemoFxToolkitIT {
     }
 
     @Test
+    @DisplayName("filling a spinner commits the value, not just the editor text")
+    void fillSpinnerCommitsValue() throws Exception {
+        // Regression: the editor showed 42 while the spinner's value stayed 1, so the
+        // application's submit handler read the wrong number.
+        String uid = uidOf("quantitySpinner");
+        toolkit.fill(Map.of("uid", uid, "text", "42"));
+        assertEquals("42", toolkit.getComponentDetails(Map.of("uid", uid)).get("text"));
+    }
+
+    @Test
     @DisplayName("filling a non-text control fails with a message naming the type")
     void fillRejectsWrongControl() throws Exception {
         String uid = uidOf("submitButton");
@@ -240,8 +250,47 @@ class DemoFxToolkitIT {
     void waitForText() throws Exception {
         toolkit.fill(Map.of("uid", uidOf("nameField"), "text", "Grace"));
         toolkit.click(Map.of("uid", uidOf("submitButton")));
-        assertEquals("Condition met",
-            toolkit.waitFor(Map.of("text", "submitted: Grace", "timeoutMs", 3000)));
+        assertTrue(toolkit.waitFor(Map.of("text", "submitted: Grace", "timeoutMs", 3000)).startsWith("Condition met"));
+    }
+
+    @Test
+    @DisplayName("typeText inserts each character exactly once")
+    void typeTextInsertsOnce() throws Exception {
+        // Regression: an earlier version dispatched KEY_TYPED *and* appended the
+        // character, so "abc" came out as "aabbcc". The control's own handler
+        // does the inserting; the toolkit must not.
+        String uid = uidOf("nameField");
+        toolkit.fill(Map.of("uid", uid, "text", ""));
+        toolkit.typeText(Map.of("uid", uid, "text", "abc"));
+        assertEquals("abc", toolkit.getComponentDetails(Map.of("uid", uid)).get("text"));
+    }
+
+    @Test
+    @DisplayName("a modal Alert reports pending, is listed with its real text, and is dismissable")
+    void modalDialogRoundTrip() throws Exception {
+        // The whole fire-and-poll protocol on JavaFX: the menu action opens an
+        // Alert via showAndWait, which nests an event loop and never returns, so
+        // the toolkit must come back with a pending result instead of hanging.
+        Object result = toolkit.selectMenuItem(Map.of("path", "Help > About"));
+        assertTrue(result instanceof Map, "expected a pending map, got " + result);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> pending = (Map<String, Object>) result;
+        assertEquals("pending", pending.get("status"));
+        assertEquals(Boolean.TRUE, pending.get("modalDialogOpen"));
+
+        List<Map<String, Object>> dialogs = toolkit.listDialogs();
+        assertEquals(1, dialogs.size(), "dialogs: " + dialogs);
+        Map<String, Object> about = dialogs.get(0);
+        assertEquals("About", about.get("title"));
+        assertEquals(Boolean.TRUE, about.get("modal"));
+        // The message must be what the user sees, read from the DialogPane, not
+        // whichever Label the graph walk happens to hit first.
+        assertEquals("Used for testing the swing-mcp server.", about.get("message"));
+        assertEquals("Swing MCP JavaFX Demo", about.get("header"));
+        assertEquals(List.of("OK"), about.get("buttons"));
+
+        assertEquals("Pressed OK", toolkit.handleDialog(Map.of("button", "OK")));
+        assertTrue(toolkit.listDialogs().isEmpty(), "dialog should be gone");
     }
 
     @Test

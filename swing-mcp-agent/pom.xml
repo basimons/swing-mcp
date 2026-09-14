@@ -12,7 +12,7 @@
 
     <artifactId>swing-mcp-agent</artifactId>
     <packaging>jar</packaging>
-    <description>Java agent for attaching to running Swing JVMs via PID</description>
+    <description>Java agent loaded into Swing or JavaFX JVMs (at launch or by PID); one UiToolkit per toolkit</description>
 
     <dependencies>
         <dependency>

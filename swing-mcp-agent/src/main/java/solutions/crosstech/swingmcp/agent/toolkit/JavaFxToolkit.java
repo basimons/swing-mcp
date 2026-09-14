@@ -260,33 +260,47 @@ public class JavaFxToolkit extends AbstractUiToolkit {
             if (sc == null || sc.getRoot() == null) {
                 return List.<Map<String, Object>>of();
             }
+            // Wire contract (SnapshotService.findComponent): {query, by}, where by is
+            // NAME, TEXT, CLASS or ANY — the same contract the Swing scanner honours.
+            // The older name/text/componentClass form is still accepted for callers
+            // that use the toolkit directly.
+            String query = str(p, "query");
+            String by = str(p, "by") == null ? "ANY" : str(p, "by").toUpperCase();
             String byId = str(p, "name");
             String byText = str(p, "text");
             String byType = str(p, "componentClass");
+            if (query != null) {
+                boolean any = "ANY".equals(by);
+                byId = any || "NAME".equals(by) ? query : null;
+                byText = any || "TEXT".equals(by) ? query : null;
+                byType = any || "CLASS".equals(by) ? query : null;
+            }
             List<Map<String, Object>> hits = new ArrayList<>();
-            collectMatches(sc.getRoot(), byId, byText, byType, hits);
+            collectMatches(sc.getRoot(), byId, byText, byType, query != null && "ANY".equals(by), hits);
             return hits;
         });
     }
 
-    private void collectMatches(Node node, String byId, String byText, String byType,
+    private void collectMatches(Node node, String byId, String byText, String byType, boolean anyOf,
                                 List<Map<String, Object>> hits) {
         String pkg = node.getClass().getPackageName();
         if (pkg.startsWith("javafx.scene.control.skin") || pkg.startsWith("com.sun.")) {
             return;
         }
-        boolean match = true;
-        if (byId != null) {
-            match = byId.equals(node.getId());
+        boolean idHit = byId != null && byId.equalsIgnoreCase(node.getId());
+        String t = FxScene.textOf(node);
+        boolean textHit = byText != null && t != null && t.toLowerCase().contains(byText.toLowerCase());
+        boolean typeHit = byType != null && node.getClass().getSimpleName().equalsIgnoreCase(byType);
+        boolean match;
+        if (anyOf) {
+            // by=ANY: a hit on any field, as the Swing scanner does.
+            match = idHit || textHit || typeHit;
+        } else {
+            // Explicit fields: every supplied criterion must hold.
+            match = (byId == null || idHit) && (byText == null || textHit) && (byType == null || typeHit)
+                && (byId != null || byText != null || byType != null);
         }
-        if (match && byText != null) {
-            String t = FxScene.textOf(node);
-            match = t != null && t.contains(byText);
-        }
-        if (match && byType != null) {
-            match = node.getClass().getSimpleName().equalsIgnoreCase(byType);
-        }
-        if (match && (byId != null || byText != null || byType != null)) {
+        if (match) {
             Bounds b = node.getBoundsInParent();
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("uid", scene.uidFor(node));
@@ -307,12 +321,12 @@ public class JavaFxToolkit extends AbstractUiToolkit {
         // same contentOf() definition as the walker so the two cannot drift.
         if (node instanceof javafx.scene.control.Control control) {
             for (Node child : FxScene.contentOf(control)) {
-                collectMatches(child, byId, byText, byType, hits);
+                collectMatches(child, byId, byText, byType, anyOf, hits);
             }
         }
         if (node instanceof Parent parent) {
             for (Node child : parent.getChildrenUnmodifiable()) {
-                collectMatches(child, byId, byText, byType, hits);
+                collectMatches(child, byId, byText, byType, anyOf, hits);
             }
         }
     }
@@ -325,7 +339,9 @@ public class JavaFxToolkit extends AbstractUiToolkit {
                 throw new IllegalArgumentException("Component " + str(p, "uid")
                     + " is a " + n.getClass().getSimpleName() + ", not a TableView");
             }
-            return FxScene.tableData(table, intOr(p, "maxRows", DEFAULT_MAX_ROWS));
+            int startRow = Math.max(0, intOr(p, "startRow", 0));
+            int endRow = intOr(p, "endRow", -1);
+            return FxScene.tableData(table, startRow, endRow < 0 ? startRow + intOr(p, "maxRows", DEFAULT_MAX_ROWS) : endRow);
         });
     }
 
@@ -334,7 +350,9 @@ public class JavaFxToolkit extends AbstractUiToolkit {
         return onUi(() -> {
             Node n = nodeParam(p);
             if (n instanceof ListView<?> list) {
-                return FxScene.listItems(list, intOr(p, "maxItems", DEFAULT_MAX_ROWS));
+                int start = Math.max(0, intOr(p, "startIndex", 0));
+                int end = intOr(p, "endIndex", -1);
+                return FxScene.listItems(list, start, end < 0 ? start + intOr(p, "maxItems", DEFAULT_MAX_ROWS) : end);
             }
             if (n instanceof ComboBox<?> cb) {
                 Map<String, Object> m = new LinkedHashMap<>();
@@ -383,7 +401,22 @@ public class JavaFxToolkit extends AbstractUiToolkit {
             m.put("modal", FxScene.isModal(w));
             m.put("toolkit", id());
             Scene sc = FxScene.sceneOf(w);
-            if (sc != null && sc.getRoot() != null) {
+            if (sc != null && sc.getRoot() instanceof javafx.scene.control.DialogPane pane) {
+                // A javafx.scene.control.Dialog (Alert, TextInputDialog, ...) has a
+                // DialogPane root that knows its own text and buttons. Read those
+                // directly: walking the graph for the first Label finds the pane's
+                // internal placeholder, not what the user sees.
+                List<String> buttons = new ArrayList<>();
+                for (javafx.scene.control.ButtonType bt : pane.getButtonTypes()) {
+                    buttons.add(bt.getText());
+                }
+                m.put("buttons", buttons);
+                m.put("message", pane.getContentText());
+                if (pane.getHeaderText() != null && !pane.getHeaderText().isBlank()) {
+                    m.put("header", pane.getHeaderText());
+                }
+            } else if (sc != null && sc.getRoot() != null) {
+                // A hand-built modal Stage: fall back to what can be seen.
                 List<String> buttons = new ArrayList<>();
                 collectButtonLabels(sc.getRoot(), buttons);
                 m.put("buttons", buttons);
@@ -519,18 +552,43 @@ public class JavaFxToolkit extends AbstractUiToolkit {
                 cb.getEditor().setText(text);
                 return "Filled editable combo box";
             }
-            if (n instanceof Spinner<?> sp && sp.getEditor() != null) {
-                sp.getEditor().setText(text);
-                return "Filled spinner editor";
+            if (n instanceof Spinner<?> sp) {
+                // Setting the editor text alone leaves the spinner's value untouched —
+                // and Spinner.commitValue() is a no-op unless the spinner is editable.
+                // Go through the value factory's own converter so the value the
+                // application reads is what was asked for, editable or not.
+                return fillSpinner(sp, text);
             }
             throw new IllegalArgumentException("Component " + str(p, "uid") + " is a "
                 + n.getClass().getSimpleName() + " and cannot be filled with text");
         });
     }
 
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static String fillSpinner(Spinner<?> spinner, String text) {
+        javafx.scene.control.SpinnerValueFactory factory = spinner.getValueFactory();
+        if (factory == null) {
+            throw new IllegalStateException("Spinner has no value factory");
+        }
+        javafx.util.StringConverter converter = factory.getConverter();
+        Object value;
+        try {
+            value = converter != null ? converter.fromString(text) : text;
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("Spinner cannot accept \"" + text + "\": " + e.getMessage());
+        }
+        factory.setValue(value);
+        return "Filled spinner with " + spinner.getValue();
+    }
+
     /**
      * Types character by character so the application's own key handlers and
      * validators fire, which {@link #fill} deliberately bypasses.
+     *
+     * <p>Only the {@code KEY_TYPED} event is dispatched. A {@code TextInputControl}
+     * inserts the character itself in response to that event, exactly as it does
+     * for a physical keystroke — inserting it here as well would put every
+     * character in twice, which is what an earlier version of this method did.</p>
      */
     @Override
     public String typeText(Map<String, Object> p) throws Exception {
@@ -542,9 +600,6 @@ public class JavaFxToolkit extends AbstractUiToolkit {
                 String s = String.valueOf(c);
                 Event.fireEvent(n, new KeyEvent(KeyEvent.KEY_TYPED, s, s, KeyCode.UNDEFINED,
                     false, false, false, false));
-                if (n instanceof TextInputControl t) {
-                    t.appendText(s);
-                }
             }
             return "Typed " + text.length() + " character(s)";
         });
@@ -750,22 +805,35 @@ public class JavaFxToolkit extends AbstractUiToolkit {
         return null;
     }
 
+    /** Wire contract (InteractionService.selectContextMenuItem): {@code uid} and a {@code path} like "Copy" or "Edit > Copy". */
     @Override
     public Object selectContextMenuItem(Map<String, Object> p) throws Exception {
-        String text = required(p, "text");
+        String path = str(p, "path") != null ? str(p, "path") : required(p, "text");
         return action(() -> {
             Node n = nodeParam(p);
             javafx.scene.control.ContextMenu menu = contextMenuOf(n);
             if (menu == null) {
                 throw new IllegalStateException("Component has no context menu");
             }
-            for (MenuItem item : menu.getItems()) {
-                if (text.equals(item.getText())) {
-                    item.fire();
-                    return "Selected context menu item " + text;
+            List<? extends MenuItem> level = menu.getItems();
+            MenuItem found = null;
+            for (String part : path.split("\\s*>\\s*")) {
+                found = null;
+                for (MenuItem item : level) {
+                    if (part.equals(item.getText())) {
+                        found = item;
+                        break;
+                    }
+                }
+                if (found == null) {
+                    throw new IllegalArgumentException("No context menu item named " + part + " in " + path);
+                }
+                if (found instanceof javafx.scene.control.Menu m) {
+                    level = m.getItems();
                 }
             }
-            throw new IllegalArgumentException("No context menu item named " + text);
+            found.fire();
+            return "Selected context menu item " + path;
         });
     }
 
@@ -819,22 +887,37 @@ public class JavaFxToolkit extends AbstractUiToolkit {
         return null;
     }
 
+    /**
+     * Wire contract (InteractionService.pressKey): {@code keys} is a chord such as
+     * {@code "ENTER"}, {@code "TAB"} or {@code "CTRL+A"}, matching the Swing scanner.
+     */
     @Override
     public String pressKey(Map<String, Object> p) throws Exception {
-        String key = required(p, "key");
+        String keys = str(p, "keys") != null ? str(p, "keys") : required(p, "key");
         return onUi(() -> {
-            KeyCode code = KeyCode.valueOf(key.toUpperCase().replace(' ', '_'));
+            boolean ctrl = false, shift = false, alt = false, meta = false;
+            KeyCode code = null;
+            for (String part : keys.toUpperCase().split("\\+")) {
+                switch (part.trim()) {
+                    case "CTRL", "CONTROL" -> ctrl = true;
+                    case "SHIFT" -> shift = true;
+                    case "ALT" -> alt = true;
+                    case "META", "CMD", "COMMAND" -> meta = true;
+                    default -> code = KeyCode.valueOf(part.trim().replace(' ', '_'));
+                }
+            }
+            if (code == null) {
+                throw new IllegalArgumentException("No key in chord: " + keys);
+            }
             Window win = targetWindow(p);
             Scene sc = win == null ? null : FxScene.sceneOf(win);
             if (sc == null) {
                 throw new IllegalStateException("No JavaFX window");
             }
             Node target = sc.getFocusOwner() != null ? sc.getFocusOwner() : sc.getRoot();
-            Event.fireEvent(target, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code,
-                false, false, false, false));
-            Event.fireEvent(target, new KeyEvent(KeyEvent.KEY_RELEASED, "", "", code,
-                false, false, false, false));
-            return "Pressed " + key;
+            Event.fireEvent(target, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, shift, ctrl, alt, meta));
+            Event.fireEvent(target, new KeyEvent(KeyEvent.KEY_RELEASED, "", "", code, shift, ctrl, alt, meta));
+            return "Key pressed: " + keys;
         });
     }
 
@@ -880,28 +963,78 @@ public class JavaFxToolkit extends AbstractUiToolkit {
         return null;
     }
 
+    /**
+     * Wire contract (WaitService.waitFor): {@code conditionType} is one of
+     * WINDOW_TITLE, COMPONENT_TEXT, COMPONENT_VISIBLE, COMPONENT_ENABLED,
+     * COMPONENT_EXISTS, COMPONENT_GONE, WINDOW_COUNT, EDT_IDLE — with {@code uid}
+     * and/or {@code expectedValue} as the condition needs, matching the Swing
+     * scanner. EDT_IDLE waits for one JavaFX pulse.
+     */
     @Override
     public String waitFor(Map<String, Object> p) throws Exception {
         long timeoutMs = intOr(p, "timeoutMs", 5000);
-        String text = str(p, "text");
-        String nodeId = str(p, "name");
+        String cond = str(p, "conditionType");
+        if (cond == null) {
+            // Direct-call form used before the wire contract was honoured.
+            cond = str(p, "name") != null ? "COMPONENT_EXISTS" : "COMPONENT_TEXT";
+        }
+        final String condition = cond.toUpperCase();
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < deadline) {
-            Boolean hit = onUi(() -> {
+            Boolean met = onUi(() -> checkCondition(condition, p));
+            if (Boolean.TRUE.equals(met)) {
+                return "Condition met: " + condition;
+            }
+            Thread.sleep(200);
+        }
+        throw new IllegalStateException("Timeout waiting for condition: " + condition + " after " + timeoutMs + "ms");
+    }
+
+    private Boolean checkCondition(String condition, Map<String, Object> p) {
+        String expected = str(p, "expectedValue");
+        String uid = str(p, "uid");
+        switch (condition) {
+            case "WINDOW_TITLE" -> {
+                for (Window w : windows()) {
+                    if (expected != null && FxScene.titleOf(w).contains(expected)) {
+                        return Boolean.TRUE;
+                    }
+                }
+                return Boolean.FALSE;
+            }
+            case "COMPONENT_TEXT" -> {
+                if (uid != null) {
+                    String t = FxScene.textOf(scene.node(uid));
+                    return t != null && expected != null && t.contains(expected);
+                }
+                String needle = expected != null ? expected : str(p, "text");
                 Window win = targetWindow(p);
                 Scene sc = win == null ? null : FxScene.sceneOf(win);
-                if (sc == null || sc.getRoot() == null) {
-                    return Boolean.FALSE;
-                }
-                return matchExists(sc.getRoot(), nodeId, text);
-            });
-            if (Boolean.TRUE.equals(hit)) {
-                return "Condition met";
+                return sc != null && sc.getRoot() != null && matchExists(sc.getRoot(), null, needle);
             }
-            Thread.sleep(100);
+            case "COMPONENT_VISIBLE" -> {
+                return uid != null && scene.node(uid).isVisible();
+            }
+            case "COMPONENT_ENABLED" -> {
+                return uid != null && !scene.node(uid).isDisabled();
+            }
+            case "COMPONENT_EXISTS", "COMPONENT_GONE" -> {
+                String needle = expected != null ? expected : str(p, "name");
+                Window win = targetWindow(p);
+                Scene sc = win == null ? null : FxScene.sceneOf(win);
+                boolean exists = sc != null && sc.getRoot() != null
+                    && (matchExists(sc.getRoot(), needle, null) || matchExists(sc.getRoot(), null, needle));
+                return "COMPONENT_EXISTS".equals(condition) == exists;
+            }
+            case "WINDOW_COUNT" -> {
+                return expected != null && windows().size() == Integer.parseInt(expected);
+            }
+            case "EDT_IDLE" -> {
+                // We are on the FX thread inside onUi; reaching here means a pulse ran.
+                return Boolean.TRUE;
+            }
+            default -> throw new IllegalArgumentException("Unknown condition type: " + condition);
         }
-        throw new IllegalStateException("Timed out after " + timeoutMs
-            + " ms waiting for " + (nodeId != null ? "id=" + nodeId : "text=" + text));
     }
 
     private Boolean matchExists(Node node, String nodeId, String text) {
@@ -926,10 +1059,15 @@ public class JavaFxToolkit extends AbstractUiToolkit {
 
     // ---- windows ----------------------------------------------------------
 
+    /** Wire contract (WindowService.selectWindow): {@code index} into list_windows. */
     @Override
     public String selectWindow(Map<String, Object> p) throws Exception {
         return onUi(() -> {
-            Window w = targetWindow(p);
+            Map<String, Object> q = new LinkedHashMap<>(p);
+            if (q.get("index") != null && q.get("windowIndex") == null) {
+                q.put("windowIndex", q.get("index"));
+            }
+            Window w = targetWindow(q);
             if (w == null) {
                 throw new IllegalStateException("No JavaFX window");
             }

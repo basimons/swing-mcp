@@ -84,20 +84,22 @@ Find components by text, name, tooltip, or class without a full snapshot.
 | `by` | string | no | `TEXT`, `NAME`, `TOOLTIP`, `CLASS`, or `ANY` (default) |
 
 ### `get_table_data`
-Extract the model contents of a `JTable`: column names and row values.
+Extract the model contents of a `JTable` (Swing) or `TableView` (JavaFX):
+column names and row values.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `uid` | string | yes | JTable component UID |
+| `uid` | string | yes | `JTable` (Swing) or `TableView` (JavaFX) component UID |
 | `startRow` | number | no | Zero-based first row (inclusive) |
 | `endRow` | number | no | Zero-based last row (inclusive) |
 
 ### `get_list_items`
-Extract the items of a `JList` or visible rows of a `JTree`.
+Extract the items of a `JList`/`ListView` or visible rows of a
+`JTree`/`TreeView`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `uid` | string | yes | JList or JTree component UID |
+| `uid` | string | yes | `JList`/`JTree` (Swing) or `ListView`/`TreeView` (JavaFX) component UID |
 | `startIndex` | number | no | Zero-based first item (inclusive) |
 | `endIndex` | number | no | Zero-based last item (inclusive) |
 
@@ -170,7 +172,9 @@ Type text character-by-character using key events (unlike `fill`).
 | `uid` | string | no | Component UID to focus before typing |
 
 ### `fill`
-Set the text/value of a text component, `JSpinner`, or editable `JComboBox`.
+Set the text/value of a text component, `JSpinner`, `JSlider`, or editable
+`JComboBox` (Swing) — or a `TextInputControl`, `Spinner`, or editable
+`ComboBox` (JavaFX).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -178,7 +182,8 @@ Set the text/value of a text component, `JSpinner`, or editable `JComboBox`.
 | `text` | string | yes | Text or value to enter |
 
 ### `select_option`
-Select an option in a `JList`, `JComboBox`, or `JTabbedPane`.
+Select an option in a `JList`, `JComboBox`, or `JTabbedPane` (Swing) — or a
+`ComboBox`, `ChoiceBox`, `ListView`, or `TabPane` (JavaFX).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -187,31 +192,33 @@ Select an option in a `JList`, `JComboBox`, or `JTabbedPane`.
 | `text` | string | no | Visible text of the option |
 
 ### `select_tree_node`
-Select a `JTree` node by path.
+Select a `JTree` (Swing) or `TreeView` (JavaFX) node by path.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `uid` | string | yes | JTree component UID |
+| `uid` | string | yes | `JTree` (Swing) or `TreeView` (JavaFX) component UID |
 | `path` | string | yes | Node path, e.g. `Root > Folder > Leaf` |
 
 ### `select_table_cell`
-Select a `JTable` cell.
+Select a `JTable` (Swing) or `TableView` (JavaFX) cell.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `uid` | string | yes | JTable component UID |
+| `uid` | string | yes | `JTable` (Swing) or `TableView` (JavaFX) component UID |
 | `row` | number | yes | Zero-based row |
 | `col` | number | yes | Zero-based column |
 
 ### `select_menu_item`
-Click a menu item in the active window's menu bar.
+Click a menu item in the active window's menu bar (`JMenuBar` for Swing,
+`MenuBar` for JavaFX).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `path` | string | yes | Menu path, e.g. `File > Save` |
 
 ### `select_context_menu_item`
-Open a component's context menu and click an item by path.
+Open a component's context menu and click an item by path (`JPopupMenu` for
+Swing, `ContextMenu` for JavaFX).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -226,7 +233,8 @@ Press a key or key chord using AWT `Robot`.
 | `keys` | string | yes | e.g. `ENTER`, `TAB`, `CTRL+S` |
 
 ### `drag`
-Drag from one component to another using mouse emulation.
+Drag from one component to another using mouse emulation. Swing only; on a
+JavaFX uid this fails with an error saying so.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -234,7 +242,7 @@ Drag from one component to another using mouse emulation.
 | `toUid` | string | yes | Target component UID |
 
 ### `scroll`
-Scroll a component inside a `JScrollPane`.
+Scroll a component inside a `JScrollPane` (Swing) or `ScrollPane` (JavaFX).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -287,13 +295,14 @@ Wait until a UI condition is met or a timeout elapses.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `conditionType` | string | yes | `WINDOW_TITLE`, `COMPONENT_TEXT`, `COMPONENT_VISIBLE`, `COMPONENT_ENABLED`, `COMPONENT_EXISTS`, `COMPONENT_GONE`, `WINDOW_COUNT`, `EDT_IDLE` |
+| `conditionType` | string | yes | `WINDOW_TITLE`, `COMPONENT_TEXT`, `COMPONENT_VISIBLE`, `COMPONENT_ENABLED`, `COMPONENT_EXISTS`, `COMPONENT_GONE`, `WINDOW_COUNT`, `EDT_IDLE` (on JavaFX: the Application Thread has drained) |
 | `uid` | string | no | Component UID (required for `COMPONENT_TEXT`/`VISIBLE`/`ENABLED`) |
 | `expectedValue` | string | no | Expected value, search query, or window count |
 | `timeoutMs` | number | no | Timeout in ms (default 5000) |
 
 ### `evaluate_java`
-Evaluate a Java snippet inside the target JVM via JShell.
+Evaluate a Java snippet inside the target JVM via JShell. Swing only; on a
+JavaFX-only target it fails with a message saying so.
 **Disabled by default**; enable with `swing.mcp.evaluate.enabled=true`.
 
 | Parameter | Type | Required | Description |

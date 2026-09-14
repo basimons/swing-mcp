@@ -1,8 +1,8 @@
 package solutions.crosstech.swingmcp.server.tools;
 
 import solutions.crosstech.swingmcp.server.service.ClipboardService;
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.ai.mcp.annotation.McpTool;
+import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
 /**
@@ -17,14 +17,18 @@ public class ClipboardTools {
         this.clipboardService = clipboardService;
     }
 
-    @Tool(name = "get_clipboard", description = "Read the system clipboard of the target JVM as text.")
+    @McpTool(name = "get_clipboard",
+        annotations = @McpTool.McpAnnotations(title = "Read clipboard", readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false),
+        description = "Read the system clipboard of the target JVM as text.")
     public String getClipboard() {
         return ToolJson.toJson(clipboardService.getClipboard());
     }
 
-    @Tool(name = "set_clipboard", description = "Write text to the system clipboard of the target JVM.")
+    @McpTool(name = "set_clipboard",
+        annotations = @McpTool.McpAnnotations(title = "Set clipboard", readOnlyHint = false, destructiveHint = false, idempotentHint = true, openWorldHint = false),
+        description = "Write text to the system clipboard of the target JVM.")
     public String setClipboard(
-            @ToolParam(description = "Text to place on the clipboard") String text) {
+            @McpToolParam(description = "Text to place on the clipboard") String text) {
         return ToolJson.toJson(clipboardService.setClipboard(text));
     }
 }

@@ -35,7 +35,7 @@ registry; you must explicitly publish a `server.json` using the `mcp-publisher` 
 
 **Package type — MCPB:** The registry supports npm, PyPI, NuGet, Cargo, OCI (Docker), and MCPB.
 Maven Central is **not** supported. Because this is a Java project whose server must run on the
-host JVM alongside the Swing application, Docker is unsuitable. Instead, the JARs are distributed
+host JVM alongside the Swing or JavaFX application, Docker is unsuitable. Instead, the JARs are distributed
 as an **MCPB** bundle — a zip archive renamed to `.mcpb` that contains a `manifest.json` plus the
 JARs — attached to a GitHub release.
 
@@ -118,7 +118,7 @@ Write the MCPB manifest (`mcpb-build\manifest.json`):
   "manifest_version": "0.2",
   "name": "swing-mcp",
   "version": "1.0.0",
-  "description": "MCP server for inspecting and automating Java Swing applications.",
+  "description": "Let AI drive Java desktop apps, Swing and JavaFX — see the UI, click, fill forms, read tables. No API needed.",
   "author": { "name": "CrossTech Solutions" },
   "server": {
     "type": "binary",
@@ -140,7 +140,7 @@ $manifestJson = @'
   "manifest_version": "0.2",
   "name": "swing-mcp",
   "version": "1.0.0",
-  "description": "MCP server for inspecting and automating Java Swing applications.",
+  "description": "Let AI drive Java desktop apps, Swing and JavaFX — see the UI, click, fill forms, read tables. No API needed.",
   "author": { "name": "CrossTech Solutions" },
   "server": {
     "type": "binary",
@@ -194,7 +194,7 @@ in Step 2:
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.crosstech-solutions-bv/swing-mcp",
-  "description": "MCP server for inspecting and automating Java Swing applications.",
+  "description": "Let AI drive Java desktop apps, Swing and JavaFX — see the UI, click, fill forms, read tables. No API needed.",
   "repository": {
     "url": "https://github.com/crosstech-solutions-bv/swing-mcp",
     "source": "github"
@@ -223,7 +223,7 @@ $serverJson = @"
 {
   "`$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.crosstech-solutions-bv/swing-mcp",
-  "description": "MCP server for inspecting and automating Java Swing applications.",
+  "description": "Let AI drive Java desktop apps, Swing and JavaFX — see the UI, click, fill forms, read tables. No API needed.",
   "repository": {
     "url": "https://github.com/crosstech-solutions-bv/swing-mcp",
     "source": "github"

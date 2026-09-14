@@ -23,7 +23,7 @@ synchronising with asynchronous UI updates before taking the next action.
 | `COMPONENT_EXISTS` | A component matching the `expectedValue` text/name query exists |
 | `COMPONENT_GONE` | No component matches the `expectedValue` text/name query |
 | `WINDOW_COUNT` | The number of visible windows equals `expectedValue` |
-| `EDT_IDLE` | The event dispatch queue has drained |
+| `EDT_IDLE` | The event dispatch queue has drained (on JavaFX: the Application Thread has drained) |
 
 ## `evaluate_java`
 
@@ -39,3 +39,6 @@ arbitrary code execution in the target process and is therefore
 
 **Security:** only enable this in trusted environments; the snippet runs with
 the full privileges of the target JVM.
+
+**Notes:**
+- Swing only; on a JavaFX-only target it fails with a message saying so.

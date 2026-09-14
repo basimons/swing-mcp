@@ -7,19 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.3.0] - 2026-09-13
+Nothing yet.
+
+## [1.3.0] - 2026-09-14
 
 ### Added
 - **JavaFX support.** The agent can now drive JavaFX applications as well as Swing
-  ones, through exactly the same tools — a client never names a toolkit. Applications
+  ones, through exactly the same 39 tools — a client never names a toolkit. Applications
   that mix both in one JVM (a `JFXPanel` inside a Swing frame) work too: component
   uids are prefixed by the toolkit that issued them (`comp-` for Swing, `fx-` for
   JavaFX) and each command is routed to the toolkit that owns the uid it carries.
+- **Tool annotations and titles** on all 39 tools (`readOnlyHint`, `destructiveHint`,
+  `idempotentHint`, `openWorldHint`, `title`). Clients that honour the hints — Claude
+  Desktop, VS Code, Cursor — can skip the per-call approval prompt for the 12 read-only
+  tools and flag the three whose own effect is irreversible (`stop_app`,
+  `close_window`, `evaluate_java`). Tools migrated from Spring AI's generic `@Tool`
+  to `@McpTool`; `McpToolConfig` removed in favour of the starter's annotation scanner.
 - `UiToolkit` interface in `swing-mcp-common` and `ToolkitRegistry` in the agent,
   so a further toolkit means implementing one interface rather than touching
   dispatch. See `docs/adr/0001-multi-toolkit-agent.md`.
-- `swing-mcp-demo-fx`: a JavaFX demo application mirroring the Swing one, plus 17
-  integration tests that drive it through the real toolkit.
+- `swing-mcp-demo-fx`: a JavaFX demo application mirroring the Swing one, plus 20
+  integration tests that drive it through the toolkit and 8 that drive it through the
+  real server over stdio (`ServerRoundTripIT`), so a server↔agent contract mismatch
+  fails the build.
+- `ToolAnnotationsTest` pins the read-only and destructive sets; `JavaFxAbsentTest`
+  proves a Swing-only JVM never loads a `javafx.*` class.
 - CI asserts the agent jar contains no JavaFX runtime classes.
 
 ### Changed
@@ -31,8 +43,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`LabeledText`, caret and selection `Path` nodes) is omitted as a rendering detail.
   Controls that hold real content — `ScrollPane`, `TabPane`, `SplitPane`,
   `TitledPane`, `Accordion`, `ToolBar`, `ButtonBar` — are traversed explicitly.
-- Descriptions, docs and skills now say Swing *and* JavaFX, so clients and models
-  know the capability exists.
+- Tool descriptions served over `tools/list`, the MCPB manifest, README, docs and
+  skills now say Swing *and* JavaFX, so clients and models know the capability exists.
+  `take_snapshot` explains the `comp-`/`fx-` prefixes; `evaluate_java` and `drag`
+  are marked Swing-only.
+- `tools/list` grew from 14.4 KB to 22.1 KB (roughly 3.8k → 5.8k tokens per request):
+  4.5 KB is the annotations themselves, 2.1 KB is a `$schema` line the annotation
+  scanner adds to every input schema. The latter is pure overhead and is a candidate
+  for stripping in a follow-up.
+- `additionalProperties: false` is no longer emitted on input schemas (scanner
+  behaviour); property names, types, descriptions and `required` arrays are unchanged.
 
 ### Notes
 - JavaFX is an optional dependency: compiled against at `provided` scope and
@@ -40,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   application and the agent jar never bundles a JavaFX runtime.
 - `evaluate_java` and `drag` remain Swing-only; on JavaFX they fail with a message
   saying so rather than a stack trace.
+- Structured output (`outputSchema`) is not part of this release; every tool still
+  returns a JSON string in a text block.
 
 ## [1.2.3] - 2026-09-08
 
@@ -147,7 +169,7 @@ Initial release.
 ### Changed
 - Logging migrated to `logback-spring.xml`; agent command handling updated for modal dialogs.
 
-[Unreleased]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.3...HEAD
+[Unreleased]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.3.0...HEAD
 [1.3.0]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.3...V1.3.0
 [1.2.3]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.2...V1.2.3
 [1.2.2]: https://github.com/crosstech-solutions-bv/swing-mcp/compare/V1.2.1...V1.2.2

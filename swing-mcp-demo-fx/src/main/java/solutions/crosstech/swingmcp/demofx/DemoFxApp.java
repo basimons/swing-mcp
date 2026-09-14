@@ -50,6 +50,7 @@ public class DemoFxApp extends Application {
     public void start(Stage stage) {
         TabPane tabs = new TabPane();
         tabs.setId("tabs");
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
         tabs.getTabs().addAll(
             new Tab("Form", formPane()),
             new Tab("Data", dataPane()),
@@ -73,8 +74,9 @@ public class DemoFxApp extends Application {
         MenuItem about = new MenuItem("About");
         about.setId("aboutItem");
         about.setOnAction(e -> {
-            Alert alert = new Alert(Alert.AlertType.INFORMATION, "Swing MCP JavaFX demo");
+            Alert alert = new Alert(Alert.AlertType.INFORMATION, "Used for testing the swing-mcp server.");
             alert.setTitle("About");
+            alert.setHeaderText("Swing MCP JavaFX Demo");
             alert.initOwner(stage);
             alert.showAndWait();
         });
