@@ -130,11 +130,28 @@ public class InteractionTools {
 
     @McpTool(name = "scroll",
         annotations = @McpTool.McpAnnotations(title = "Scroll", readOnlyHint = false, destructiveHint = false, idempotentHint = false, openWorldHint = false),
-        description = "Scroll a scrollable component in a direction by a number of units.")
+        description = """
+        Scroll a component in a direction by a number of units. Moves the enclosing \
+        JScrollPane/ScrollPane; components without one get mouse-wheel notches instead.""")
     public String scroll(
-            @McpToolParam(description = "Component UID inside a scroll pane") String uid,
+            @McpToolParam(description = "Component UID, usually inside a scroll pane") String uid,
             @McpToolParam(description = "Direction: UP, DOWN, LEFT, or RIGHT (default DOWN)", required = false) String direction,
             @McpToolParam(description = "Number of scroll units (default 3)", required = false) Integer amount) {
         return ToolJson.toJson(interactionService.scroll(uid, direction, amount));
+    }
+
+    @McpTool(name = "mouse_wheel",
+        annotations = @McpTool.McpAnnotations(title = "Mouse wheel", readOnlyHint = false, destructiveHint = false, idempotentHint = false, openWorldHint = false),
+        description = """
+        Rotate the mouse wheel over a component, at an optional point and with optional \
+        modifier keys. Use for components that handle the wheel themselves (zoom, pan, \
+        custom scrollers), e.g. CTRL+wheel to zoom a graph or chart.""")
+    public String mouseWheel(
+            @McpToolParam(description = "Component UID from a snapshot") String uid,
+            @McpToolParam(description = "Wheel notches; positive scrolls down/towards the user, negative up") int rotation,
+            @McpToolParam(description = "X within the component in pixels (default centre)", required = false) Integer x,
+            @McpToolParam(description = "Y within the component in pixels (default centre)", required = false) Integer y,
+            @McpToolParam(description = "Modifier keys held during the wheel, e.g. CTRL, SHIFT or CTRL+SHIFT (also ALT, META)", required = false) String modifiers) {
+        return ToolJson.toJson(interactionService.mouseWheel(uid, rotation, x, y, modifiers));
     }
 }

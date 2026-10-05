@@ -71,6 +71,7 @@ class ToolkitRegistryTest {
         @Override public String pressKey(Map<String, Object> p) { throw nope(); }
         @Override public String drag(Map<String, Object> p) { throw nope(); }
         @Override public String scroll(Map<String, Object> p) { throw nope(); }
+        @Override public String mouseWheel(Map<String, Object> p) { throw nope(); }
         @Override public String waitFor(Map<String, Object> p) { throw nope(); }
         @Override public String selectWindow(Map<String, Object> p) { throw nope(); }
         @Override public String resizeWindow(Map<String, Object> p) { throw nope(); }

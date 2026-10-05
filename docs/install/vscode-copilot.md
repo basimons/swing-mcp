@@ -52,7 +52,7 @@ code --add-mcp '{"name":"swing","command":"java","args":["-jar","/path/to/swing-
 
 Save `mcp.json`; a **Start** code lens appears above the entry (or run **MCP: List Servers →
 swing → Start**). Open Copilot Chat, switch to **Agent** mode, and open the tools picker
-(**Configure Tools**): `swing` is listed with its 39 tools.
+(**Configure Tools**): `swing` is listed with its 40 tools.
 
 ## 4. First prompt
 

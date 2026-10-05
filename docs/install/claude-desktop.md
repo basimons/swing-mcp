@@ -35,7 +35,7 @@ and restart Claude Desktop.
 ## 3. Verify
 
 Start a new chat and ask *"Which Swing MCP tools do you have?"* — you should see `launch_app`,
-`take_snapshot`, `click`, `fill`, `get_table_data`, … (39 tools). The tools icon under the
+`take_snapshot`, `click`, `fill`, `get_table_data`, … (40 tools). The tools icon under the
 chat box lists them too.
 
 ## 4. First prompt

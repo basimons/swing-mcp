@@ -132,6 +132,9 @@ public interface UiToolkit {
 
     String scroll(Map<String, Object> params) throws Exception;
 
+    /** Delivers mouse-wheel notches to a component at a point, with optional modifiers. */
+    String mouseWheel(Map<String, Object> params) throws Exception;
+
     String waitFor(Map<String, Object> params) throws Exception;
 
     // ---- windows ----------------------------------------------------------

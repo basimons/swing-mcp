@@ -25,12 +25,13 @@ class DemoFrameIT {
             try {
                 JTabbedPane tabs = (JTabbedPane) findByName(frame.getContentPane(), "mainTabs");
                 assertNotNull(tabs);
-                assertEquals(5, tabs.getTabCount());
+                assertEquals(6, tabs.getTabCount());
                 assertEquals("Buttons", tabs.getTitleAt(0));
                 assertEquals("Forms", tabs.getTitleAt(1));
                 assertEquals("Lists", tabs.getTitleAt(2));
                 assertEquals("Table", tabs.getTitleAt(3));
                 assertEquals("Tree", tabs.getTitleAt(4));
+                assertEquals("Canvas", tabs.getTitleAt(5));
 
                 JLabel status = (JLabel) findByName(frame.getContentPane(), "statusLabel");
                 assertNotNull(status);

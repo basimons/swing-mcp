@@ -243,12 +243,27 @@ JavaFX uid this fails with an error saying so.
 
 ### `scroll`
 Scroll a component inside a `JScrollPane` (Swing) or `ScrollPane` (JavaFX).
+A component with no scroll pane around it gets `amount` mouse-wheel notches
+instead (Shift+wheel for `LEFT`/`RIGHT`).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `uid` | string | yes | Component UID |
 | `direction` | string | no | `UP`, `DOWN` (default), `LEFT`, `RIGHT` |
 | `amount` | number | no | Scroll units (default 3) |
+
+### `mouse_wheel`
+Rotate the mouse wheel over a component, for components that zoom or pan on
+the wheel themselves. One event per notch goes to the deepest component under
+the point.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `uid` | string | yes | Component UID |
+| `rotation` | number | yes | Notches (1–100 either way); positive = down, negative = up |
+| `x` | number | no | X within the component (default centre) |
+| `y` | number | no | Y within the component (default centre) |
+| `modifiers` | string | no | `CTRL`, `SHIFT`, `ALT`, `META`, e.g. `CTRL+SHIFT` |
 
 ## Dialogs
 

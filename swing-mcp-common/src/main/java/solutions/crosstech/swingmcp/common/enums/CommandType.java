@@ -33,6 +33,7 @@ public enum CommandType {
     PRESS_KEY,
     DRAG,
     SCROLL,
+    MOUSE_WHEEL,
     WAIT_FOR,
     EVALUATE_JAVA,
     PING

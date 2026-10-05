@@ -228,7 +228,7 @@ Example enabling `evaluate_java` and a custom screenshot directory:
 ## Verifying the setup
 
 1. Ask your client to list its MCP tools — you should see `launch_app`,
-   `take_snapshot`, `click`, etc. (39 tools in total).
+   `take_snapshot`, `click`, etc. (40 tools in total).
 2. Try the demo app (built with `mvn verify`):
    - `launch_app` with command `java -jar /path/to/swing-mcp-demo-<version>.jar`
    - `take_snapshot` to discover component UIDs

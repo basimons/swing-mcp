@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- **`mouse_wheel` tool**: turns the mouse wheel over a component at an optional
+  point, with optional `CTRL`/`SHIFT`/`ALT`/`META`, so graph viewers, charts and
+  maps that zoom or pan on the wheel can be driven. 40 tools in total now.
+- A "Canvas" tab in both demo apps that zooms and pans on the wheel.
+
+### Changed
+- `scroll` on a component with no enclosing scroll pane sends mouse-wheel
+  notches instead of failing, so custom scrollers (e.g. JUNG's
+  `GraphZoomScrollPane`) and JavaFX `ListView`/`TableView`/`TreeView` scroll.
 
 ## [1.3.0] - 2026-09-14
 

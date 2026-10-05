@@ -66,7 +66,7 @@ class ToolAnnotationsTest {
                     t.name() + ": this server drives a local application; openWorldHint must be false");
             }
         }
-        assertEquals(39, count, "tool count changed — update the docs and this test deliberately");
+        assertEquals(40, count, "tool count changed — update the docs and this test deliberately");
     }
 
     @Test

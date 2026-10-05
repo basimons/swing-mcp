@@ -22,6 +22,7 @@ import java.awt.datatransfer.StringSelection;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseWheelEvent;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -78,6 +79,8 @@ public class ComponentScanner {
      */
     /** Default cap on the number of component nodes returned by a single snapshot. */
     private static final int DEFAULT_MAX_NODES = 2000;
+    /** Cap on wheel notches per command, so one call cannot keep the EDT busy indefinitely. */
+    private static final int MAX_WHEEL_NOTCHES = 100;
 
     public SnapshotNode takeSnapshot(Map<String, Object> params) {
         Window win = getTargetWindow(params);
@@ -452,7 +455,9 @@ public class ComponentScanner {
     }
 
     /**
-     * Scrolls a scrollable component in the specified direction.
+     * Scrolls a scrollable component in the specified direction. Components
+     * with no enclosing {@link JScrollPane} (custom scrollers that paint their
+     * own scrollbars) get mouse-wheel events at their centre instead.
      */
     public String scroll(Map<String, Object> params) {
         String uid = getString(params, "uid");
@@ -463,7 +468,12 @@ public class ComponentScanner {
         ScrollDirection direction = ScrollDirection.valueOf(directionStr.toUpperCase());
         JScrollPane scrollPane = findScrollPane(comp);
         if (scrollPane == null) {
-            throw new IllegalArgumentException("No scroll pane found for: " + uid);
+            // Shift+wheel is the Swing convention for horizontal scrolling.
+            boolean horizontal = direction == ScrollDirection.LEFT || direction == ScrollDirection.RIGHT;
+            int rotation = (direction == ScrollDirection.DOWN || direction == ScrollDirection.RIGHT) ? amount : -amount;
+            Component target = dispatchWheel(comp, comp.getWidth() / 2, comp.getHeight() / 2,
+                rotation, horizontal ? InputEvent.SHIFT_DOWN_MASK : 0);
+            return "Scrolled " + direction + " by " + amount + " mouse-wheel notch(es) on " + typeName(target);
         }
 
         JScrollBar bar = (direction == ScrollDirection.UP || direction == ScrollDirection.DOWN)
@@ -473,6 +483,76 @@ public class ComponentScanner {
         int delta = (direction == ScrollDirection.DOWN || direction == ScrollDirection.RIGHT) ? amount : -amount;
         bar.setValue(bar.getValue() + delta * bar.getUnitIncrement());
         return "Scrolled " + direction + " by " + amount;
+    }
+
+    /**
+     * Rotates the mouse wheel over a component using synthesized events, so no Robot is needed.
+     * Params: uid, rotation (required; positive = down), x, y (default centre), modifiers (e.g. "CTRL+SHIFT").
+     */
+    public String mouseWheel(Map<String, Object> params) {
+        String uid = getString(params, "uid");
+        int rotation = getInt(params, "rotation", 1);
+        Component comp = resolveUid(uid);
+        if (!comp.isEnabled()) {
+            throw new IllegalStateException("Component " + uid + " is disabled");
+        }
+        int x = getInt(params, "x", comp.getWidth() / 2);
+        int y = getInt(params, "y", comp.getHeight() / 2);
+        if (x < 0 || y < 0 || x >= comp.getWidth() || y >= comp.getHeight()) {
+            throw new IllegalArgumentException("Point (" + x + "," + y + ") is outside " + uid
+                + ", which is " + comp.getWidth() + "x" + comp.getHeight());
+        }
+        String modifiers = getString(params, "modifiers", "");
+        Component target = dispatchWheel(comp, x, y, rotation, parseModifiers(modifiers));
+        return "Mouse wheel rotated " + rotation + " notch(es) at (" + x + "," + y + ") of " + uid
+            + (modifiers.isBlank() ? "" : " with " + modifiers.toUpperCase())
+            + "; delivered to " + typeName(target);
+    }
+
+    /**
+     * Dispatches one {@link MouseWheelEvent} per notch to the deepest component at (x,y) of
+     * {@code comp}, from where AWT forwards it to the nearest wheel listener. Returns that component.
+     */
+    private Component dispatchWheel(Component comp, int x, int y, int rotation, int modifiers) {
+        if (rotation == 0 || Math.abs(rotation) > MAX_WHEEL_NOTCHES) {
+            throw new IllegalArgumentException("Wheel notches must be between 1 and " + MAX_WHEEL_NOTCHES
+                + " in either direction, got " + rotation);
+        }
+        Component target = comp instanceof Container c ? SwingUtilities.getDeepestComponentAt(c, x, y) : null;
+        if (target == null) {
+            target = comp;
+        }
+        Point p = SwingUtilities.convertPoint(comp, x, y, target);
+        Point screen = new Point(p);
+        if (target.isShowing()) {
+            SwingUtilities.convertPointToScreen(screen, target);
+        }
+        int notch = Integer.signum(rotation);
+        for (int i = 0; i < Math.abs(rotation); i++) {
+            target.dispatchEvent(new MouseWheelEvent(target, MouseEvent.MOUSE_WHEEL,
+                System.currentTimeMillis(), modifiers, p.x, p.y, screen.x, screen.y,
+                0, false, MouseWheelEvent.WHEEL_UNIT_SCROLL, 3, notch, notch));
+        }
+        return target;
+    }
+
+    /** Parses a modifier chord such as "CTRL+SHIFT" into extended modifier masks. */
+    private int parseModifiers(String modifiers) {
+        int mask = 0;
+        for (String part : modifiers.split("\\+")) {
+            if (part.isBlank()) {
+                continue;
+            }
+            mask |= switch (part.trim().toUpperCase()) {
+                case "CTRL", "CONTROL" -> InputEvent.CTRL_DOWN_MASK;
+                case "SHIFT" -> InputEvent.SHIFT_DOWN_MASK;
+                case "ALT" -> InputEvent.ALT_DOWN_MASK;
+                case "META", "CMD", "COMMAND" -> InputEvent.META_DOWN_MASK;
+                default -> throw new IllegalArgumentException("Unknown modifier: " + part
+                    + ". Use CTRL, SHIFT, ALT or META.");
+            };
+        }
+        return mask;
     }
 
     /**
@@ -1248,6 +1328,12 @@ public class ComponentScanner {
             }
         }
         return result;
+    }
+
+    /** Simple class name, falling back to the full name for anonymous subclasses. */
+    private static String typeName(Object o) {
+        String simple = o.getClass().getSimpleName();
+        return simple.isEmpty() ? o.getClass().getName() : simple;
     }
 
     private String getWindowTitle(Window w) {

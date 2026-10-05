@@ -3,6 +3,7 @@ package solutions.crosstech.swingmcp.agent.toolkit;
 import javafx.application.Platform;
 import javafx.event.Event;
 import javafx.geometry.Bounds;
+import javafx.geometry.Point2D;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
@@ -27,6 +28,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.input.ScrollEvent;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 import solutions.crosstech.swingmcp.common.dto.ComponentDescriptor;
@@ -58,6 +60,10 @@ public class JavaFxToolkit extends AbstractUiToolkit {
 
     private static final int DEFAULT_MAX_NODES = 2000;
     private static final int DEFAULT_MAX_ROWS = 200;
+    /** Cap on wheel notches per command, so one call cannot keep the FX thread busy indefinitely. */
+    private static final int MAX_WHEEL_NOTCHES = 100;
+    /** Pixels per wheel notch; JavaFX's own default on every desktop platform. */
+    private static final double WHEEL_NOTCH_PX = 40;
 
     private final FxScene scene = new FxScene();
     private volatile Window activeWindow;
@@ -930,24 +936,124 @@ public class JavaFxToolkit extends AbstractUiToolkit {
     @Override
     public String scroll(Map<String, Object> p) throws Exception {
         String direction = str(p, "direction") == null ? "DOWN" : str(p, "direction").toUpperCase();
+        if (!List.of("UP", "DOWN", "LEFT", "RIGHT").contains(direction)) {
+            throw new IllegalArgumentException("Unknown direction: " + direction);
+        }
         double amount = intOr(p, "amount", 1) * 0.1;
         return onUi(() -> {
             Node n = nodeParam(p);
             javafx.scene.control.ScrollPane pane = n instanceof javafx.scene.control.ScrollPane sp
                 ? sp : enclosingScrollPane(n);
             if (pane == null) {
-                throw new IllegalArgumentException("Component " + str(p, "uid")
-                    + " is not inside a ScrollPane");
+                // ListView, TableView, TreeView and custom controls scroll themselves on ScrollEvents.
+                int notches = intOr(p, "amount", 3);
+                boolean horizontal = direction.equals("LEFT") || direction.equals("RIGHT");
+                int rotation = direction.equals("DOWN") || direction.equals("RIGHT") ? notches : -notches;
+                Bounds b = n.getLayoutBounds();
+                Node target = fireWheel(n, b.getMinX() + b.getWidth() / 2, b.getMinY() + b.getHeight() / 2,
+                    rotation, horizontal, false, false, false);
+                return "Scrolled " + direction + " by " + notches + " mouse-wheel notch(es) on " + typeName(target);
             }
             switch (direction) {
                 case "UP" -> pane.setVvalue(clamp(pane.getVvalue() - amount));
                 case "DOWN" -> pane.setVvalue(clamp(pane.getVvalue() + amount));
                 case "LEFT" -> pane.setHvalue(clamp(pane.getHvalue() - amount));
-                case "RIGHT" -> pane.setHvalue(clamp(pane.getHvalue() + amount));
-                default -> throw new IllegalArgumentException("Unknown direction: " + direction);
+                default -> pane.setHvalue(clamp(pane.getHvalue() + amount));
             }
             return "Scrolled " + direction;
         });
+    }
+
+    /**
+     * Wire contract (InteractionService.mouseWheel): {@code uid}, {@code rotation}
+     * (notches, positive = down, as in AWT), optional {@code x}/{@code y} relative
+     * to the node (default centre) and {@code modifiers} such as {@code "CTRL"}.
+     */
+    @Override
+    public String mouseWheel(Map<String, Object> p) throws Exception {
+        int rotation = intOr(p, "rotation", 1);
+        String modifiers = str(p, "modifiers") == null ? "" : str(p, "modifiers");
+        return onUi(() -> {
+            Node n = nodeParam(p);
+            String uid = str(p, "uid");
+            if (n.isDisabled()) {
+                throw new IllegalStateException("Component " + uid + " is disabled");
+            }
+            Bounds b = n.getLayoutBounds();
+            int x = intOr(p, "x", (int) (b.getWidth() / 2));
+            int y = intOr(p, "y", (int) (b.getHeight() / 2));
+            if (x < 0 || y < 0 || x >= b.getWidth() || y >= b.getHeight()) {
+                throw new IllegalArgumentException("Point (" + x + "," + y + ") is outside " + uid
+                    + ", which is " + (int) b.getWidth() + "x" + (int) b.getHeight());
+            }
+            boolean ctrl = false, shift = false, alt = false, meta = false;
+            for (String part : modifiers.toUpperCase().split("\\+")) {
+                switch (part.trim()) {
+                    case "" -> { }
+                    case "CTRL", "CONTROL" -> ctrl = true;
+                    case "SHIFT" -> shift = true;
+                    case "ALT" -> alt = true;
+                    case "META", "CMD", "COMMAND" -> meta = true;
+                    default -> throw new IllegalArgumentException("Unknown modifier: " + part
+                        + ". Use CTRL, SHIFT, ALT or META.");
+                }
+            }
+            Node target = fireWheel(n, b.getMinX() + x, b.getMinY() + y, rotation, shift, ctrl, alt, meta);
+            return "Mouse wheel rotated " + rotation + " notch(es) at (" + x + "," + y + ") of " + uid
+                + (modifiers.isBlank() ? "" : " with " + modifiers.toUpperCase())
+                + "; delivered to " + typeName(target);
+        });
+    }
+
+    /**
+     * Fires one {@link ScrollEvent} per notch at the deepest node under (x,y) of {@code n}, in
+     * local coordinates, so it bubbles up as a real one would. Shift moves the delta to the
+     * horizontal axis, as desktop platforms deliver Shift+wheel. Returns the node it was fired at.
+     */
+    private Node fireWheel(Node n, double x, double y, int rotation,
+                           boolean shift, boolean ctrl, boolean alt, boolean meta) {
+        if (rotation == 0 || Math.abs(rotation) > MAX_WHEEL_NOTCHES) {
+            throw new IllegalArgumentException("Wheel notches must be between 1 and " + MAX_WHEEL_NOTCHES
+                + " in either direction, got " + rotation);
+        }
+        Point2D scenePt = n.localToScene(x, y);
+        Point2D screenPt = n.localToScreen(x, y);
+        double sx = screenPt == null ? scenePt.getX() : screenPt.getX();
+        double sy = screenPt == null ? scenePt.getY() : screenPt.getY();
+        Node target = deepestAt(n, scenePt.getX(), scenePt.getY());
+        // AWT counts positive notches as "down"; JavaFX deltas are positive "up".
+        double delta = -Integer.signum(rotation) * WHEEL_NOTCH_PX;
+        double dx = shift ? delta : 0;
+        double dy = shift ? 0 : delta;
+        for (int i = 0; i < Math.abs(rotation); i++) {
+            Event.fireEvent(target, new ScrollEvent(ScrollEvent.SCROLL,
+                scenePt.getX(), scenePt.getY(), sx, sy, shift, ctrl, alt, meta,
+                false, false, dx, dy, dx, dy,
+                ScrollEvent.HorizontalTextScrollUnits.NONE, 0,
+                ScrollEvent.VerticalTextScrollUnits.NONE, 0, 0, null));
+        }
+        return target;
+    }
+
+    /** The deepest visible, mouse-receiving descendant of {@code n} at a scene point. */
+    private static Node deepestAt(Node n, double sceneX, double sceneY) {
+        if (n instanceof Parent parent) {
+            List<Node> kids = parent.getChildrenUnmodifiable();
+            for (int i = kids.size() - 1; i >= 0; i--) {
+                Node kid = kids.get(i);
+                if (kid.isVisible() && !kid.isMouseTransparent()
+                    && kid.contains(kid.sceneToLocal(sceneX, sceneY))) {
+                    return deepestAt(kid, sceneX, sceneY);
+                }
+            }
+        }
+        return n;
+    }
+
+    /** Simple class name, falling back to the full name for anonymous subclasses. */
+    private static String typeName(Object o) {
+        String simple = o.getClass().getSimpleName();
+        return simple.isEmpty() ? o.getClass().getName() : simple;
     }
 
     private static double clamp(double v) {

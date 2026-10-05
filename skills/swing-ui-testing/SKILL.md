@@ -33,7 +33,8 @@ description: Uses Swing MCP to test and verify Java desktop application behavior
 - **Verify data**: `get_table_data` with `startRow`/`endRow` to assert column names and cell values (`JTable` in Swing, `TableView` in JavaFX); `get_list_items` for `JList` items or visible `JTree` rows (`ListView`/`TreeView` in JavaFX).
 - **Select**: `select_table_cell` (row/col), `select_option` (index or visible text), `select_tree_node` with a `Root > Folder > Leaf` path.
 - **Row actions**: after selecting, use `click` with `clickType: "DOUBLE"` to open, or `select_context_menu_item` for the row's context menu.
-- **Long content**: `scroll` inside the `JScrollPane` (or `ScrollPane` in JavaFX) to reach off-screen rows before interacting via mouse emulation.
+- **Long content**: `scroll` inside the `JScrollPane` (or `ScrollPane` in JavaFX) to reach off-screen rows before interacting via mouse emulation. Components without a scroll pane get mouse-wheel notches instead.
+- **Zoom and pan**: graph, chart and map canvases that react to the wheel themselves take `mouse_wheel`, with a point and `modifiers` such as `CTRL`. Check the result with a screenshot or the app's own status text.
 
 ### 4. Menus and dialogs
 

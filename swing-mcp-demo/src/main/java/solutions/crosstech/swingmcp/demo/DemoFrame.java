@@ -30,6 +30,7 @@ public class DemoFrame extends JFrame {
         tabs.addTab("Lists", new ListsPanel(statusLabel));
         tabs.addTab("Table", new TablePanel(statusLabel));
         tabs.addTab("Tree", new TreePanel(statusLabel));
+        tabs.addTab("Canvas", new CanvasPanel(statusLabel));
 
         statusLabel.setName("statusLabel");
         setLayout(new BorderLayout());

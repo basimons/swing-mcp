@@ -24,8 +24,12 @@ import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Circle;
 import javafx.stage.Stage;
 
 /**
@@ -46,6 +50,10 @@ public class DemoFxApp extends Application {
         public int getQuantity() { return quantity; }
     }
 
+    private int canvasZoom = 100;
+    private int canvasOffsetX;
+    private int canvasOffsetY;
+
     @Override
     public void start(Stage stage) {
         TabPane tabs = new TabPane();
@@ -54,7 +62,8 @@ public class DemoFxApp extends Application {
         tabs.getTabs().addAll(
             new Tab("Form", formPane()),
             new Tab("Data", dataPane()),
-            new Tab("Tree", treePane()));
+            new Tab("Tree", treePane()),
+            new Tab("Canvas", canvasPane()));
 
         BorderPane root = new BorderPane();
         root.setId("root");
@@ -182,6 +191,56 @@ public class DemoFxApp extends Application {
         box.setId("treeBox");
         box.setPadding(new Insets(12));
         return box;
+    }
+
+    private VBox canvasPane() {
+        // A graph-viewer style canvas with no ScrollPane: the wheel zooms,
+        // Shift+wheel pans horizontally and Ctrl+wheel pans vertically.
+        Pane graph = new Pane();
+        int[][] nodes = {{80, 60}, {220, 140}, {360, 80}, {160, 260}, {320, 240}};
+        for (int[] n : nodes) {
+            graph.getChildren().add(new Circle(n[0], n[1], 12, Color.STEELBLUE));
+        }
+        Pane canvas = new Pane(graph);
+        canvas.setId("graphCanvas");
+        canvas.setPrefSize(400, 260);
+        canvas.setStyle("-fx-background-color: white;");
+
+        Label state = new Label(canvasState());
+        state.setId("canvasState");
+        canvas.addEventHandler(ScrollEvent.SCROLL, e -> {
+            // Shift+wheel arrives as deltaX, plain and Ctrl+wheel as deltaY.
+            int notches = (int) -Math.signum(e.getDeltaY() + e.getDeltaX());
+            if (e.isShiftDown()) {
+                canvasOffsetX -= notches * 20;
+            } else if (e.isControlDown()) {
+                canvasOffsetY -= notches * 20;
+            } else {
+                canvasZoom = Math.max(10, Math.min(1000, canvasZoom - notches * 10));
+            }
+            graph.setScaleX(canvasZoom / 100.0);
+            graph.setScaleY(canvasZoom / 100.0);
+            graph.setTranslateX(canvasOffsetX);
+            graph.setTranslateY(canvasOffsetY);
+            state.setText(canvasState());
+            e.consume();
+        });
+
+        ListView<String> log = new ListView<>();
+        for (int i = 0; i < 200; i++) {
+            log.getItems().add("Log line " + i);
+        }
+        log.setId("logList");
+        log.setPrefHeight(120);
+
+        VBox box = new VBox(8, canvas, state, log);
+        box.setId("canvasBox");
+        box.setPadding(new Insets(12));
+        return box;
+    }
+
+    private String canvasState() {
+        return "Canvas zoom " + canvasZoom + "%, offset (" + canvasOffsetX + "," + canvasOffsetY + ")";
     }
 
     public static void main(String[] args) {

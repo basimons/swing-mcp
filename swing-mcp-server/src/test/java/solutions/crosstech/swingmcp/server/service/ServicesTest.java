@@ -107,10 +107,12 @@ class ServicesTest {
         service.focus("comp-10");
         service.typeText("hello", "comp-10");
         service.selectContextMenuItem("comp-11", "Copy");
-        assertEquals(13, received.size());
+        service.mouseWheel("comp-12", -2, 10, 20, "CTRL");
+        assertEquals(14, received.size());
         assertTrue(received.containsAll(java.util.List.of(
             CommandType.HOVER, CommandType.FOCUS,
-            CommandType.TYPE_TEXT, CommandType.SELECT_CONTEXT_MENU_ITEM)));
+            CommandType.TYPE_TEXT, CommandType.SELECT_CONTEXT_MENU_ITEM,
+            CommandType.MOUSE_WHEEL)));
     }
 
     @Test

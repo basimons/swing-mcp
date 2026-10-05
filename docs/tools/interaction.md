@@ -138,6 +138,33 @@ Scroll a component inside a `JScrollPane` (Swing) or `ScrollPane` (JavaFX).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `uid` | string | yes | Component UID inside a scroll pane |
+| `uid` | string | yes | Component UID, usually inside a scroll pane |
 | `direction` | string | no | `UP`, `DOWN` (default), `LEFT`, `RIGHT` |
 | `amount` | number | no | Scroll units (default 3) |
+
+**Notes:**
+- A component with no enclosing scroll pane gets `amount` mouse-wheel notches
+  at its centre instead (Shift+wheel for `LEFT`/`RIGHT`). This covers custom
+  scrollers and JavaFX `ListView`, `TableView` and `TreeView`.
+
+## `mouse_wheel`
+
+Rotate the mouse wheel over a component, at an optional point and with
+optional modifier keys held. Use it for components that react to the wheel
+themselves, such as zooming or panning a graph, chart or map, where `scroll`
+has no scrollbar to move.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `uid` | string | yes | Component UID |
+| `rotation` | number | yes | Wheel notches, 1–100 either way; positive scrolls down, negative up |
+| `x` | number | no | X within the component in pixels (default: centre) |
+| `y` | number | no | Y within the component in pixels (default: centre) |
+| `modifiers` | string | no | Keys held during the wheel: `CTRL`, `SHIFT`, `ALT`, `META`, combined as `CTRL+SHIFT` |
+
+**Notes:**
+- One event per notch (at most 100) goes to the deepest component under the
+  point and travels up to the nearest wheel handler, as with a physical wheel.
+  The events are synthesized, so no `Robot` or pointer movement is involved.
+- Example: `mouse_wheel(uid, rotation=-2, modifiers="CTRL")` turns the wheel
+  two notches up with Ctrl held, which many viewers use to zoom in.

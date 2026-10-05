@@ -199,6 +199,11 @@ public class SwingToolkit extends AbstractUiToolkit {
     }
 
     @Override
+    public String mouseWheel(Map<String, Object> p) throws Exception {
+        return onUi(() -> scanner.mouseWheel(p));
+    }
+
+    @Override
     public String waitFor(Map<String, Object> p) throws Exception {
         return scanner.waitFor(p);
     }

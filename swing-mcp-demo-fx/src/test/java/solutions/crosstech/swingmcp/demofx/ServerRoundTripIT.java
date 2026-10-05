@@ -262,4 +262,19 @@ class ServerRoundTripIT {
         String r = tool("press_key", JSON.createObjectNode().put("keys", "END"));
         assertTrue(r.contains("Key pressed: END"), r);
     }
+
+    @Test
+    @Order(9)
+    @DisplayName("mouse_wheel carries rotation, point and modifiers through the server")
+    void mouseWheel() throws Exception {
+        String tabs = firstFxUid(tool("find_component", JSON.createObjectNode().put("query", "tabs").put("by", "NAME")));
+        tool("select_option", JSON.createObjectNode().put("uid", tabs).put("text", "Canvas"));
+        String canvas = firstFxUid(tool("find_component", JSON.createObjectNode().put("query", "graphCanvas").put("by", "NAME")));
+        String r = tool("mouse_wheel", JSON.createObjectNode()
+            .put("uid", canvas).put("rotation", -3).put("x", 20).put("y", 30).put("modifiers", "SHIFT"));
+        assertTrue(r.contains("-3 notch(es) at (20,30)") && r.contains("SHIFT"), r);
+        String state = firstFxUid(tool("find_component", JSON.createObjectNode().put("query", "canvasState").put("by", "NAME")));
+        String details = tool("get_component_details", JSON.createObjectNode().put("uid", state));
+        assertTrue(details.contains("Canvas zoom 100%, offset (60,0)"), "SHIFT+wheel pans: " + details);
+    }
 }

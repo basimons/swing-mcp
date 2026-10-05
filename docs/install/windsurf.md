@@ -44,7 +44,7 @@ panel) and edit the raw config, `~/.codeium/windsurf/mcp_config.json`:
 ## 3. Verify
 
 Save and refresh the MCP list; `swing` shows with its tools, each of which can be toggled.
-Cascade allows 100 active tools across all servers; Swing MCP uses 39.
+Cascade allows 100 active tools across all servers; Swing MCP uses 40.
 
 ## 4. First prompt
 

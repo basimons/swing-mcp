@@ -182,6 +182,7 @@ public class CommandHandler {
             case PRESS_KEY -> t.pressKey(p);
             case DRAG -> t.drag(p);
             case SCROLL -> t.scroll(p);
+            case MOUSE_WHEEL -> t.mouseWheel(p);
             case WAIT_FOR -> t.waitFor(p);
 
             // Windows
