@@ -300,20 +300,21 @@ instead (Shift+wheel for `LEFT`/`RIGHT`).
 |---|---|---|---|
 | `uid` | string | yes | Component UID |
 | `direction` | string | no | `UP`, `DOWN` (default), `LEFT`, `RIGHT` |
-| `amount` | number | no | Scroll units (default 3) |
+| `amount` | number | no | Scroll units (default 3 on every path): scroll-bar unit increments (Swing), tenths of the range (JavaFX `ScrollPane`), or wheel notches without a scroll pane |
 
 ### `mouse_wheel`
-Rotate the mouse wheel over a component, for components that zoom or pan on
-the wheel themselves. One event per notch goes to the deepest component under
-the point.
+Turn the mouse wheel over a component, for components that zoom or pan on
+the wheel themselves. One event per notch is delivered to the component under
+the point and passed up to the nearest wheel handler, as for a physical wheel;
+this works while the window is covered or in the background.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `uid` | string | yes | Component UID |
 | `rotation` | number | yes | Notches (1–100 either way); positive = down, negative = up |
-| `x` | number | no | X within the component (default centre) |
-| `y` | number | no | Y within the component (default centre) |
-| `modifiers` | string | no | `CTRL`, `SHIFT`, `ALT`, `META`, e.g. `CTRL+SHIFT` |
+| `x` / `y` | number | no | Offset from the component's top-left corner (default: center) |
+| `modifiers` | string | no | `CTRL`, `SHIFT`, `ALT`, `META`, `SHORTCUT`, combined with `+` |
+| `robot` | boolean | no | Swing: turn the real OS mouse wheel (window must be in front) |
 
 ## Dialogs
 

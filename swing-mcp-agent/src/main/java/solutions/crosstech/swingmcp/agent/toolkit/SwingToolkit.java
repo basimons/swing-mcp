@@ -210,14 +210,16 @@ public class SwingToolkit extends AbstractUiToolkit {
         return scanner.drag(p);
     }
 
+    /** The application's wheel or scroll handlers may open a modal dialog, so fire-and-poll. */
     @Override
-    public String scroll(Map<String, Object> p) throws Exception {
-        return onUi(() -> scanner.scroll(p));
+    public Object scroll(Map<String, Object> p) throws Exception {
+        return action(() -> scanner.scroll(p));
     }
 
+    /** May open a modal dialog, so fire-and-poll. */
     @Override
-    public String mouseWheel(Map<String, Object> p) throws Exception {
-        return onUi(() -> scanner.mouseWheel(p));
+    public Object mouseWheel(Map<String, Object> p) throws Exception {
+        return action(() -> scanner.mouseWheel(p));
     }
 
     @Override

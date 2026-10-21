@@ -5,6 +5,7 @@ import solutions.crosstech.swingmcp.common.dto.SnapshotNode;
 import solutions.crosstech.swingmcp.common.enums.ComponentStateFilter;
 import solutions.crosstech.swingmcp.common.enums.ScrollDirection;
 import solutions.crosstech.swingmcp.common.enums.WindowState;
+import solutions.crosstech.swingmcp.common.spi.UiToolkit;
 import java.awt.AWTException;
 import java.awt.Component;
 import java.awt.Container;
@@ -75,8 +76,6 @@ public class ComponentScanner {
 
     /** Default cap on the number of component nodes returned by a single snapshot. */
     private static final int DEFAULT_MAX_NODES = 2000;
-    /** Cap on wheel notches per command, so one call cannot keep the EDT busy indefinitely. */
-    private static final int MAX_WHEEL_NOTCHES = 100;
 
     /**
      * Takes a snapshot of the current active window's component tree.
@@ -974,11 +973,13 @@ public class ComponentScanner {
      * Scrolls a scrollable component in the specified direction. Components
      * with no enclosing {@link JScrollPane} (custom scrollers that paint their
      * own scrollbars) get mouse-wheel events at their centre instead.
+     * {@code amount} defaults to {@value UiToolkit#DEFAULT_SCROLL_AMOUNT} units: scroll
+     * bar unit increments, or wheel notches in the fallback.
      */
     public String scroll(Map<String, Object> params) {
         String uid = getString(params, "uid");
         String directionStr = getString(params, "direction", "DOWN");
-        int amount = getInt(params, "amount", 3);
+        int amount = getInt(params, "amount", UiToolkit.DEFAULT_SCROLL_AMOUNT);
         Component comp = resolveUid(uid);
 
         ScrollDirection direction = ScrollDirection.valueOf(directionStr.toUpperCase());
@@ -987,9 +988,11 @@ public class ComponentScanner {
             // Shift+wheel is the Swing convention for horizontal scrolling.
             boolean horizontal = direction == ScrollDirection.LEFT || direction == ScrollDirection.RIGHT;
             int rotation = (direction == ScrollDirection.DOWN || direction == ScrollDirection.RIGHT) ? amount : -amount;
-            Component target = dispatchWheel(comp, comp.getWidth() / 2, comp.getHeight() / 2,
+            requireWheelNotches(rotation);
+            Component target = dispatchWheel(comp, new Point(comp.getWidth() / 2, comp.getHeight() / 2),
                 rotation, horizontal ? InputEvent.SHIFT_DOWN_MASK : 0);
-            return "Scrolled " + direction + " by " + amount + " mouse-wheel notch(es) on " + typeName(target);
+            return "Scrolled " + direction + " by " + amount + " mouse-wheel notch(es) on "
+                + ClassNames.displayName(target.getClass());
         }
 
         JScrollBar bar = (direction == ScrollDirection.UP || direction == ScrollDirection.DOWN)
@@ -1002,54 +1005,81 @@ public class ComponentScanner {
     }
 
     /**
-     * Rotates the mouse wheel over a component using synthesized events, so no Robot is needed.
-     * Params: uid, rotation (required; positive = down), x, y (default centre), modifiers (e.g. "CTRL+SHIFT").
+     * Turns the mouse wheel over a component. Must run on the EDT.
+     *
+     * <p>Params: uid, rotation (notches, positive = down/towards the user),
+     * x/y (relative to the component's top-left corner, default its center),
+     * modifiers (e.g. "CTRL+SHIFT", "SHORTCUT"). One {@link MouseWheelEvent}
+     * per notch is delivered to the component under the point, so it works
+     * while the window is covered or in the background; {@code robot=true}
+     * turns the real wheel over that point instead.</p>
      */
-    public String mouseWheel(Map<String, Object> params) {
+    public String mouseWheel(Map<String, Object> params) throws AWTException {
         String uid = getString(params, "uid");
-        int rotation = getInt(params, "rotation", 1);
+        int rotation = getInt(params, "rotation", 0);
         Component comp = resolveUid(uid);
         if (!comp.isEnabled()) {
             throw new IllegalStateException("Component " + uid + " is disabled");
         }
-        int x = getInt(params, "x", comp.getWidth() / 2);
-        int y = getInt(params, "y", comp.getHeight() / 2);
-        if (x < 0 || y < 0 || x >= comp.getWidth() || y >= comp.getHeight()) {
-            throw new IllegalArgumentException("Point (" + x + "," + y + ") is outside " + uid
-                + ", which is " + comp.getWidth() + "x" + comp.getHeight());
-        }
+        requireWheelNotches(rotation);
+        Point p = pointIn(comp, params, "x", "y");
         String modifiers = getString(params, "modifiers", "");
-        Component target = dispatchWheel(comp, x, y, rotation, parseModifiers(modifiers));
-        return "Mouse wheel rotated " + rotation + " notch(es) at (" + x + "," + y + ") of " + uid
-            + (modifiers.isBlank() ? "" : " with " + modifiers.toUpperCase())
-            + "; delivered to " + typeName(target);
+        int mask = parseModifiers(modifiers);
+        String delivered;
+        if (getBoolean(params, "robot", false)) {
+            robotWheel(comp, p, rotation, mask);
+            delivered = "with the real mouse";
+        } else {
+            delivered = "delivered to " + ClassNames.displayName(dispatchWheel(comp, p, rotation, mask).getClass());
+        }
+        return "Mouse wheel rotated " + rotation + " notch(es) at (" + p.x + "," + p.y + ") of " + uid
+            + (modifiers.isBlank() ? "" : " with " + modifiers.toUpperCase()) + "; " + delivered;
+    }
+
+    private static void requireWheelNotches(int rotation) {
+        if (rotation == 0 || Math.abs(rotation) > UiToolkit.MAX_WHEEL_NOTCHES) {
+            throw new IllegalArgumentException("Wheel notches must be between 1 and " + UiToolkit.MAX_WHEEL_NOTCHES
+                + " in either direction, got " + rotation);
+        }
     }
 
     /**
-     * Dispatches one {@link MouseWheelEvent} per notch to the deepest component at (x,y) of
-     * {@code comp}, from where AWT forwards it to the nearest wheel listener. Returns that component.
+     * Dispatches one {@link MouseWheelEvent} per notch to the deepest component at {@code p}
+     * (relative to {@code comp}). AWT passes a wheel event that component has no listener for
+     * on to the nearest ancestor that has one, as for a physical wheel. Returns the component
+     * the events were dispatched to.
      */
-    private Component dispatchWheel(Component comp, int x, int y, int rotation, int modifiers) {
-        if (rotation == 0 || Math.abs(rotation) > MAX_WHEEL_NOTCHES) {
-            throw new IllegalArgumentException("Wheel notches must be between 1 and " + MAX_WHEEL_NOTCHES
-                + " in either direction, got " + rotation);
-        }
-        Component target = comp instanceof Container c ? SwingUtilities.getDeepestComponentAt(c, x, y) : null;
-        if (target == null) {
-            target = comp;
-        }
-        Point p = SwingUtilities.convertPoint(comp, x, y, target);
-        Point screen = new Point(p);
+    private Component dispatchWheel(Component comp, Point p, int rotation, int modifiers) {
+        Component target = deepestAt(comp, p);
+        Point tp = SwingUtilities.convertPoint(comp, p, target);
+        Point screen = new Point(tp);
         if (target.isShowing()) {
             SwingUtilities.convertPointToScreen(screen, target);
         }
         int notch = Integer.signum(rotation);
         for (int i = 0; i < Math.abs(rotation); i++) {
+            // Unit scroll of 3 units per notch, as the desktop platforms report a physical wheel.
             target.dispatchEvent(new MouseWheelEvent(target, MouseEvent.MOUSE_WHEEL,
-                System.currentTimeMillis(), modifiers, p.x, p.y, screen.x, screen.y,
+                System.currentTimeMillis(), modifiers, tp.x, tp.y, screen.x, screen.y,
                 0, false, MouseWheelEvent.WHEEL_UNIT_SCROLL, 3, notch, notch));
         }
         return target;
+    }
+
+    private void robotWheel(Component comp, Point p, int rotation, int modifiers) throws AWTException {
+        requireShowing(comp);
+        Robot robot = new Robot();
+        Point loc = comp.getLocationOnScreen();
+        List<Integer> keys = modifierKeys(modifiers);
+        keys.forEach(robot::keyPress);
+        try {
+            robot.mouseMove(loc.x + p.x, loc.y + p.y);
+            robot.mouseWheel(rotation);
+        } finally {
+            for (int i = keys.size() - 1; i >= 0; i--) {
+                robot.keyRelease(keys.get(i));
+            }
+        }
     }
 
     /**
@@ -1910,12 +1940,6 @@ public class ComponentScanner {
             }
         }
         return result;
-    }
-
-    /** Simple class name, falling back to the full name for anonymous subclasses. */
-    private static String typeName(Object o) {
-        String simple = o.getClass().getSimpleName();
-        return simple.isEmpty() ? o.getClass().getName() : simple;
     }
 
     private String getWindowTitle(Window w) {

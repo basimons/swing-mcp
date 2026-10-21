@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scroll` on a component with no enclosing scroll pane sends mouse-wheel
   notches instead of failing, so custom scrollers (e.g. JUNG's
   `GraphZoomScrollPane`) and JavaFX `ListView`/`TableView`/`TreeView` scroll.
+- JavaFX `scroll` without `amount` moves 3 units, the documented default and the
+  Swing one, instead of 1.
 
 ### Fixed
 - `take_screenshot` on a JavaFX window saved a broken file: the JavaFX toolkit returned the
@@ -126,9 +128,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Snapshot nodes, `find_component` results and `get_component_details` include the
   component's `tooltip` (HTML reduced to plain text, omitted when equal to the text);
   for icon-only buttons it is often the only label.
-- **`mouse_wheel` tool**: turns the mouse wheel over a component at an optional
-  point, with optional `CTRL`/`SHIFT`/`ALT`/`META`, so graph viewers, charts and
-  maps that zoom or pan on the wheel can be driven. 41 tools in total now.
+- **`mouse_wheel` tool**: turns the mouse wheel over a component at `x`/`y`
+  (default its center), with optional `modifiers` (`CTRL`, `SHIFT`, `ALT`, `META`,
+  `SHORTCUT`), so graph viewers, charts and maps that zoom or pan on the wheel can
+  be driven. The events go straight to the application, like `click`'s, so the
+  window may be covered or in the background; `robot: true` (Swing) turns the real
+  OS wheel instead. A wheel that opens a modal dialog returns a pending result.
+  41 tools in total now.
 - A "Canvas" tab in both demo apps that zooms and pans on the wheel.
 
 ## [1.3.0] - 2026-09-14

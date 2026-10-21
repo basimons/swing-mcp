@@ -10,6 +10,7 @@ import solutions.crosstech.swingmcp.common.command.CommandResponse;
 import solutions.crosstech.swingmcp.common.enums.CommandType;
 import java.awt.BorderLayout;
 import java.awt.GraphicsEnvironment;
+import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.event.InputEvent;
 import java.awt.event.MouseWheelEvent;
@@ -103,6 +104,44 @@ class MouseWheelCommandTest {
             assertTrue((e.getModifiersEx() & InputEvent.SHIFT_DOWN_MASK) != 0, "SHIFT held");
             assertEquals(0, e.getModifiersEx() & InputEvent.ALT_DOWN_MASK, "ALT not held");
         }
+    }
+
+    @Test
+    void wheelEventsLookLikeAPhysicalWheelsAndHonourShortcut() throws Exception {
+        CommandResponse r = call(CommandType.MOUSE_WHEEL,
+            Map.of("uid", uidOf("canvas"), "rotation", 1, "modifiers", "SHORTCUT"));
+        assertTrue(r.success(), "mouse_wheel failed: " + r.error());
+        MouseWheelEvent e = canvasEvents.get(0);
+        assertEquals(MouseWheelEvent.WHEEL_UNIT_SCROLL, e.getScrollType());
+        assertEquals(3, e.getScrollAmount());
+        assertEquals(1.0, e.getPreciseWheelRotation());
+        int shortcut = GraphicsEnvironment.isHeadless()
+            ? InputEvent.CTRL_DOWN_MASK : Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+        assertEquals(shortcut, e.getModifiersEx() & shortcut, "SHORTCUT held");
+    }
+
+    @Test
+    void robotTurnsTheRealWheelOverThePoint() throws Exception {
+        CommandResponse r = call(CommandType.MOUSE_WHEEL,
+            Map.of("uid", uidOf("canvas"), "rotation", -2, "x", 40, "y", 50, "modifiers", "CTRL", "robot", true));
+        assertTrue(r.success(), "mouse_wheel failed: " + r.error());
+        assertTrue(String.valueOf(r.result()).contains("real mouse"), String.valueOf(r.result()));
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (canvasEvents.stream().mapToInt(MouseWheelEvent::getWheelRotation).sum() > -2
+            && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50);
+        }
+        assertEquals(-2, canvasEvents.stream().mapToInt(MouseWheelEvent::getWheelRotation).sum(), "two notches up");
+        MouseWheelEvent e = canvasEvents.get(0);
+        assertEquals(40, e.getX());
+        assertEquals(50, e.getY());
+        assertTrue(e.isControlDown(), "CTRL held");
+    }
+
+    @Test
+    void scrollWithoutAnAmountSendsThreeNotches() throws Exception {
+        assertTrue(call(CommandType.SCROLL, Map.of("uid", uidOf("canvas"), "direction", "DOWN")).success());
+        assertEquals(3, canvasEvents.size());
     }
 
     @Test

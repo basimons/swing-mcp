@@ -132,10 +132,27 @@ public interface UiToolkit {
 
     String drag(Map<String, Object> params) throws Exception;
 
-    String scroll(Map<String, Object> params) throws Exception;
+    /**
+     * Units {@link #scroll} moves when no {@code amount} is given, whichever way it
+     * scrolls: scroll-bar unit increments (Swing), tenths of the scroll range
+     * (JavaFX {@code ScrollPane}) or, for a component with no scroll pane, wheel notches.
+     */
+    int DEFAULT_SCROLL_AMOUNT = 3;
 
-    /** Delivers mouse-wheel notches to a component at a point, with optional modifiers. */
-    String mouseWheel(Map<String, Object> params) throws Exception;
+    /** Most wheel notches one command may deliver, so it cannot keep the UI thread busy indefinitely. */
+    int MAX_WHEEL_NOTCHES = 100;
+
+    /**
+     * Scrolls a component's scroll pane, or sends wheel notches to a component
+     * that has none. A wheel handler may open a modal dialog; see {@link #click}.
+     */
+    Object scroll(Map<String, Object> params) throws Exception;
+
+    /**
+     * Delivers mouse-wheel notches to a component at a point, with optional modifiers.
+     * May open a modal dialog; see {@link #click}.
+     */
+    Object mouseWheel(Map<String, Object> params) throws Exception;
 
     String waitFor(Map<String, Object> params) throws Exception;
 

@@ -219,19 +219,20 @@ public class InteractionService {
         return registry.require().send(CommandType.SCROLL, params);
     }
 
-    /** Rotates the mouse wheel over a component, optionally at a point and with modifiers. */
-    public Object mouseWheel(String uid, int rotation, Integer x, Integer y, String modifiers) {
+    /**
+     * Turns the mouse wheel over a component, optionally at an offset from its
+     * top-left corner, with modifier keys held, or with the real OS mouse.
+     */
+    public Object mouseWheel(String uid, int rotation, Integer x, Integer y, String modifiers, Boolean robot) {
         Map<String, Object> params = new HashMap<>();
         params.put("uid", uid);
         params.put("rotation", rotation);
-        if (x != null) {
-            params.put("x", x);
-        }
-        if (y != null) {
-            params.put("y", y);
-        }
+        putPoint(params, "x", x, "y", y);
         if (modifiers != null && !modifiers.isBlank()) {
             params.put("modifiers", modifiers);
+        }
+        if (Boolean.TRUE.equals(robot)) {
+            params.put("robot", true);
         }
         return registry.require().send(CommandType.MOUSE_WHEEL, params);
     }

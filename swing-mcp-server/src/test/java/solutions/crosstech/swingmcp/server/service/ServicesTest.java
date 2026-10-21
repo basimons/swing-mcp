@@ -119,7 +119,7 @@ class ServicesTest {
         service.focus("comp-10");
         service.typeText("hello", "comp-10");
         service.selectContextMenuItem("comp-11", "Copy");
-        service.mouseWheel("comp-12", -2, 10, 20, "CTRL");
+        service.mouseWheel("comp-12", -2, 10, 20, "CTRL", null);
         assertEquals(14, received.size());
         assertTrue(received.containsAll(java.util.List.of(
             CommandType.HOVER, CommandType.FOCUS,
@@ -158,6 +158,11 @@ class ServicesTest {
         service.drag("comp-3", null, 1, 2, 30, 40, null);
         assertEquals(Map.of("fromUid", "comp-3", "fromX", 1, "fromY", 2, "toX", 30, "toY", 40),
             requests.poll().params());
+        service.mouseWheel("comp-4", -2, 5, null, "SHORTCUT", true);
+        assertEquals(Map.of("uid", "comp-4", "rotation", -2, "x", 5, "modifiers", "SHORTCUT", "robot", true),
+            requests.poll().params());
+        service.mouseWheel("comp-4", 1, null, null, " ", null);
+        assertEquals(Map.of("uid", "comp-4", "rotation", 1), requests.poll().params());
     }
 
     @Test

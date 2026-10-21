@@ -30,6 +30,7 @@ import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
+import javafx.scene.shape.Rectangle;
 import javafx.stage.Stage;
 
 /**
@@ -207,6 +208,11 @@ public class DemoFxApp extends Application {
         canvas.setId("graphCanvas");
         canvas.setPrefSize(400, 260);
         canvas.setStyle("-fx-background-color: white;");
+        // Keep the zoomed or panned graph inside the canvas, as a viewer's viewport would.
+        Rectangle clip = new Rectangle();
+        clip.widthProperty().bind(canvas.widthProperty());
+        clip.heightProperty().bind(canvas.heightProperty());
+        canvas.setClip(clip);
 
         Label state = new Label(canvasState());
         state.setId("canvasState");

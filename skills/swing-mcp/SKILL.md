@@ -25,7 +25,7 @@ description: Uses Swing MCP for efficient debugging, troubleshooting and automat
 
 1. Connect: `launch_app` or `attach_to_app`
 2. Snapshot: `take_snapshot` to understand the component tree and collect UIDs
-3. Interact: Use component `uid`s from the snapshot for `click`, `fill`, `select_option`, etc. For content drawn inside a single component (chart points, canvas items), pass `x`/`y` offsets to `click`/`hover`/`drag`; for Ctrl/Shift-clicks pass `modifiers`
+3. Interact: Use component `uid`s from the snapshot for `click`, `fill`, `select_option`, etc. For content drawn inside a single component (chart points, canvas items), pass `x`/`y` offsets to `click`/`hover`/`drag`; for Ctrl/Shift-clicks pass `modifiers`; to zoom or pan such a canvas with the wheel use `mouse_wheel` (same `x`/`y` and `modifiers`)
 4. Wait: `wait_for` to synchronise on UI state changes (`COMPONENT_TEXT`, `COMPONENT_VISIBLE`, `WINDOW_TITLE`, `EDT_IDLE`, …) instead of sleeping
 5. Re-snapshot: take a fresh `take_snapshot` after any action that changes the UI
 

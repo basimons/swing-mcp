@@ -215,12 +215,15 @@ Scroll a component inside a `JScrollPane` (Swing) or `ScrollPane` (JavaFX).
 
 **Notes:**
 - A component with no enclosing scroll pane gets `amount` mouse-wheel notches
-  at its centre instead (Shift+wheel for `LEFT`/`RIGHT`). This covers custom
+  at its center instead (Shift+wheel for `LEFT`/`RIGHT`). This covers custom
   scrollers and JavaFX `ListView`, `TableView` and `TreeView`.
+- A unit is the scroll bar's unit increment (Swing), a tenth of the scroll
+  range (JavaFX `ScrollPane`), or one wheel notch (no scroll pane). The default
+  of 3 is the same on every path and toolkit.
 
 ## `mouse_wheel`
 
-Rotate the mouse wheel over a component, at an optional point and with
+Turn the mouse wheel over a component, at an optional point and with
 optional modifier keys held. Use it for components that react to the wheel
 themselves, such as zooming or panning a graph, chart or map, where `scroll`
 has no scrollbar to move.
@@ -229,13 +232,21 @@ has no scrollbar to move.
 |---|---|---|---|
 | `uid` | string | yes | Component UID |
 | `rotation` | number | yes | Wheel notches, 1–100 either way; positive scrolls down, negative up |
-| `x` | number | no | X within the component in pixels (default: centre) |
-| `y` | number | no | Y within the component in pixels (default: centre) |
-| `modifiers` | string | no | Keys held during the wheel: `CTRL`, `SHIFT`, `ALT`, `META`, combined as `CTRL+SHIFT` |
+| `x` | number | no | Offset from the component's left edge in pixels (default: center) |
+| `y` | number | no | Offset from the component's top edge in pixels (default: center) |
+| `modifiers` | string | no | Keys held during the wheel: `CTRL`, `SHIFT`, `ALT`, `META` (Cmd), `SHORTCUT` (Ctrl, Cmd on macOS), combined as `CTRL+SHIFT` |
+| `robot` | boolean | no | Swing: turn the real OS mouse wheel with `java.awt.Robot` (window must be in front and uncovered) |
 
 **Notes:**
-- One event per notch (at most 100) goes to the deepest component under the
-  point and travels up to the nearest wheel handler, as with a physical wheel.
-  The events are synthesized, so no `Robot` or pointer movement is involved.
+- One event per notch (at most 100) is delivered to the component under the
+  point and passed up to the nearest wheel handler, as with a physical wheel.
+  The events go straight to the application, so the real pointer is not moved
+  and the window may be covered or in the background; `robot: true` (Swing)
+  uses the OS mouse instead. JavaFX ignores `robot`.
+- The events match a physical wheel's: Swing gets unit scrolls of 3 units per
+  notch, JavaFX `ScrollEvent`s of 40 px per notch. Shift moves a JavaFX wheel
+  to the horizontal axis, as desktop platforms do.
+- If the wheel opens a modal dialog, the result is pending, as for `click`.
 - Example: `mouse_wheel(uid, rotation=-2, modifiers="CTRL")` turns the wheel
   two notches up with Ctrl held, which many viewers use to zoom in.
+

@@ -1,8 +1,11 @@
 package solutions.crosstech.swingmcp.demofx;
 
 import javafx.application.Platform;
+import javafx.event.EventHandler;
+import javafx.scene.Node;
 import javafx.scene.control.ListView;
 import javafx.scene.control.skin.VirtualFlow;
+import javafx.scene.input.ScrollEvent;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 import org.junit.jupiter.api.AfterAll;
@@ -18,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -467,7 +471,7 @@ class DemoFxToolkitIT {
         assertTrue(before.startsWith("Canvas zoom "), before);
         int zoom = Integer.parseInt(before.replaceAll("Canvas zoom (\\d+)%.*", "$1"));
 
-        String result = toolkit.mouseWheel(Map.of("uid", canvas, "rotation", -2));
+        String result = String.valueOf(toolkit.mouseWheel(Map.of("uid", canvas, "rotation", -2)));
         assertTrue(result.contains("2 notch"), result);
         assertTrue(canvasState().startsWith("Canvas zoom " + (zoom + 20) + "%"), canvasState());
 
@@ -487,9 +491,53 @@ class DemoFxToolkitIT {
             return null;
         });
         waitUntil("logList at the top", () -> firstVisibleLogLine() == 0);
-        String result = toolkit.scroll(Map.of("uid", uidOf("logList"), "direction", "DOWN", "amount", 5));
+        String result = String.valueOf(toolkit.scroll(Map.of("uid", uidOf("logList"), "direction", "DOWN", "amount", 5)));
         assertTrue(result.contains("mouse-wheel"), result);
         waitUntil("logList scrolled down", () -> firstVisibleLogLine() > 0);
+    }
+
+    @Test
+    @DisplayName("mouse_wheel fires ScrollEvents like a physical wheel's, at the point, with SHORTCUT")
+    void mouseWheelEventsMatchAPhysicalWheel() throws Exception {
+        showCanvasTab();
+        String canvas = uidOf("graphCanvas");
+        List<ScrollEvent> events = new CopyOnWriteArrayList<>();
+        Node node = fx(() -> Window.getWindows().get(0).getScene().lookup("#graphCanvas"));
+        EventHandler<ScrollEvent> filter = events::add;
+        fx(() -> {
+            node.addEventFilter(ScrollEvent.SCROLL, filter);
+            return null;
+        });
+        try {
+            toolkit.mouseWheel(Map.of("uid", canvas, "rotation", 2, "x", 30, "y", 40, "modifiers", "SHORTCUT"));
+            assertEquals(2, events.size(), "one event per notch");
+            for (ScrollEvent e : events) {
+                // As JavaFX reports one notch of a physical wheel: 40 px, multiplier 40, no gesture totals.
+                assertEquals(-40, e.getDeltaY(), 0.001, "positive rotation scrolls down");
+                assertEquals(0, e.getDeltaX(), 0.001);
+                assertEquals(40, e.getMultiplierY(), 0.001);
+                assertEquals(0, e.getTotalDeltaY(), 0.001);
+                assertEquals(30, e.getX(), 0.5);
+                assertEquals(40, e.getY(), 0.5);
+                assertTrue(e.isShortcutDown(), "SHORTCUT held");
+            }
+        } finally {
+            fx(() -> {
+                node.removeEventFilter(ScrollEvent.SCROLL, filter);
+                return null;
+            });
+        }
+    }
+
+    @Test
+    @DisplayName("scroll without an amount moves three notches, the same default as with a scroll pane")
+    void scrollDefaultsToThreeUnits() throws Exception {
+        showCanvasTab();
+        String before = canvasState();
+        int zoom = Integer.parseInt(before.replaceAll("Canvas zoom (\\d+)%.*", "$1"));
+        String result = String.valueOf(toolkit.scroll(Map.of("uid", uidOf("graphCanvas"), "direction", "UP")));
+        assertTrue(result.contains("by 3 mouse-wheel notch(es)"), result);
+        assertTrue(canvasState().startsWith("Canvas zoom " + (zoom + 30) + "%"), canvasState());
     }
 
     @Test
