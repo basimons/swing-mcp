@@ -59,6 +59,23 @@ public class ApplicationService {
      * @return session info for the launched application
      */
     public Map<String, Object> launch(String command, String workingDir, String sessionId) {
+        return launch(command, workingDir, sessionId, null);
+    }
+
+    /**
+     * Launches a Swing application with the agent preloaded via {@code -javaagent},
+     * with extra environment variables for the launched process.
+     *
+     * @param command    full java command line (e.g. "java -jar app.jar"); may start with
+     *                   a wrapper such as {@code env VAR=value java ...}
+     * @param workingDir optional working directory
+     * @param sessionId  optional session id; replaces an existing session with the same id
+     * @param env        optional environment variables added to (or overriding) the
+     *                   server's own environment for this process only
+     * @return session info for the launched application
+     */
+    public Map<String, Object> launch(String command, String workingDir, String sessionId,
+                                      Map<String, String> env) {
         Path agentJar = requireAgentJar();
         try {
             // Created with owner-only permissions (0600 on POSIX; user-scoped temp
@@ -72,12 +89,9 @@ public class ApplicationService {
             if (args.isEmpty() || args.getFirst().isBlank()) {
                 throw new IllegalArgumentException("Launch command must not be empty");
             }
-            args.add(1, buildAgentArg(agentJar, portFile));
+            args.add(agentArgIndex(args), buildAgentArg(agentJar, portFile));
 
-            ProcessBuilder pb = new ProcessBuilder(args);
-            if (workingDir != null && !workingDir.isBlank()) {
-                pb.directory(Path.of(workingDir).toFile());
-            }
+            ProcessBuilder pb = processBuilder(args, workingDir, env);
             Path outputLog = Files.createTempFile("swing-mcp-app", ".log");
             outputLog.toFile().deleteOnExit();
             pb.redirectErrorStream(true);
@@ -88,10 +102,10 @@ public class ApplicationService {
             int port = handshake.port();
             AgentConnection connection =
                 AgentConnection.connect(port, properties.getToolTimeoutMs(), handshake.token());
-            AppSession session = new LaunchedAppSession(process, connection, port, "Launched: " + command);
+            AppSession session = new LaunchedAppSession(process, connection, port, "Launched: " + command, outputLog);
             String id = registry.register(sessionId, session);
             LOG.info("Launched application pid={} agentPort={} sessionId={}", process.pid(), port, id);
-            return sessionInfoMap(id, session.info());
+            return sessionInfoMap(id, session);
         } catch (IOException e) {
             throw new AgentCommandException("Failed to launch application: " + e.getMessage(), e);
         }
@@ -137,7 +151,7 @@ public class ApplicationService {
             AppSession session = new AttachedAppSession(pid, connection, port);
             String id = registry.register(sessionId, session);
             LOG.info("Attached to pid={} agentPort={} sessionId={}", pid, port, id);
-            return sessionInfoMap(id, session.info());
+            return sessionInfoMap(id, session);
         } catch (IOException e) {
             throw new AgentCommandException("Failed to attach to PID " + pid + ": " + e.getMessage(), e);
         }
@@ -179,6 +193,7 @@ public class ApplicationService {
             entry.put("pid", info.pid());
             entry.put("agentPort", info.agentPort());
             entry.put("description", info.description());
+            session.outputFile().ifPresent(f -> entry.put("outputFile", f.toString()));
             result.add(entry);
         });
         return result;
@@ -197,25 +212,124 @@ public class ApplicationService {
         }
         AppSession session = registry.require();
         SessionInfo info = session.info();
-        return Map.of(
-            "connected", true,
-            "sessionId", registry.activeSessionId(),
-            "sessionCount", registry.sessions().size(),
-            "alive", session.isAlive(),
-            "mode", info.mode().name(),
-            "pid", info.pid(),
-            "agentPort", info.agentPort(),
-            "description", info.description()
-        );
+        Map<String, Object> map = new java.util.LinkedHashMap<>();
+        map.put("connected", true);
+        map.put("sessionId", registry.activeSessionId());
+        map.put("sessionCount", registry.sessions().size());
+        map.put("alive", session.isAlive());
+        map.put("mode", info.mode().name());
+        map.put("pid", info.pid());
+        map.put("agentPort", info.agentPort());
+        map.put("description", info.description());
+        session.outputFile().ifPresent(f -> map.put("outputFile", f.toString()));
+        return map;
     }
 
-    private Map<String, Object> sessionInfoMap(String sessionId, SessionInfo info) {
+    /** Most lines a single {@link #output} call returns. */
+    static final int MAX_OUTPUT_LINES = 500;
+    /** Character budget of a single {@link #output} call, so a noisy log cannot flood the client. */
+    static final int MAX_OUTPUT_CHARS = 40_000;
+    private static final int DEFAULT_TAIL = 50;
+
+    /**
+     * Reads the captured stdout/stderr of a launched application.
+     *
+     * <p>Lines are numbered from 1. With {@code sinceLine}, the lines after that
+     * line are returned (pass the previous call's {@code toLine} to follow the
+     * output); otherwise the last {@code tail} lines. Either way at most
+     * {@link #MAX_OUTPUT_LINES} lines and about {@link #MAX_OUTPUT_CHARS}
+     * characters come back, and {@code fromLine}/{@code toLine} say which.</p>
+     *
+     * @param sessionId optional session id; the active session when null
+     * @param tail      number of last lines to return (default 50); ignored with sinceLine
+     * @param sinceLine return the lines after this line number instead of a tail
+     */
+    public Map<String, Object> output(String sessionId, Integer tail, Integer sinceLine) {
+        AppSession session = registry.require(sessionId);
+        Path file = session.outputFile().orElseThrow(() -> new IllegalStateException(
+            "This session was attached by PID, so its output is not captured; only applications "
+                + "started with launch_app have their stdout and stderr recorded."));
+        boolean following = sinceLine != null;
+        int wanted = following ? MAX_OUTPUT_LINES
+            : Math.min(MAX_OUTPUT_LINES, Math.max(1, tail == null ? DEFAULT_TAIL : tail));
+        java.util.ArrayDeque<String> lines = new java.util.ArrayDeque<>();
+        int total = 0;
+        int chars = 0;
+        int from = -1;
+        boolean more = false;
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(
+                Files.newInputStream(file), nativeCharset().newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPLACE)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPLACE)))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                total++;
+                if (following) {
+                    if (total <= sinceLine) {
+                        continue;
+                    }
+                    if (more || lines.size() >= wanted
+                            || !lines.isEmpty() && chars + line.length() > MAX_OUTPUT_CHARS) {
+                        more = true;
+                        continue;
+                    }
+                    if (from < 0) {
+                        from = total;
+                    }
+                    lines.addLast(line);
+                    chars += line.length() + 1;
+                } else {
+                    lines.addLast(line);
+                    chars += line.length() + 1;
+                    while (lines.size() > wanted || lines.size() > 1 && chars > MAX_OUTPUT_CHARS) {
+                        chars -= lines.removeFirst().length() + 1;
+                    }
+                }
+            }
+        } catch (IOException e) {
+            throw new AgentCommandException("Failed to read application output: " + e.getMessage(), e);
+        }
+        if (!following) {
+            from = total - lines.size() + 1;
+        } else if (from < 0) {
+            from = total + 1;
+        }
+        Map<String, Object> map = new java.util.LinkedHashMap<>();
+        map.put("sessionId", sessionId != null ? sessionId : registry.activeSessionId());
+        map.put("alive", session.isAlive());
+        map.put("outputFile", file.toString());
+        map.put("totalLines", total);
+        map.put("fromLine", from);
+        map.put("toLine", from + lines.size() - 1);
+        if (more) {
+            map.put("more", true);
+        }
+        map.put("text", String.join("\n", lines));
+        return map;
+    }
+
+    /**
+     * The charset a child JVM writes redirected output in: its {@code native.encoding},
+     * which is this machine's, not this server's UTF-8 default (JEP 400).
+     */
+    private static java.nio.charset.Charset nativeCharset() {
+        try {
+            String name = System.getProperty("native.encoding");
+            return name == null ? java.nio.charset.Charset.defaultCharset() : java.nio.charset.Charset.forName(name);
+        } catch (RuntimeException e) {
+            return java.nio.charset.Charset.defaultCharset();
+        }
+    }
+
+    private Map<String, Object> sessionInfoMap(String sessionId, AppSession session) {
+        SessionInfo info = session.info();
         Map<String, Object> map = new java.util.LinkedHashMap<>();
         map.put("sessionId", sessionId);
         map.put("mode", info.mode().name());
         map.put("pid", info.pid());
         map.put("agentPort", info.agentPort());
         map.put("description", info.description());
+        session.outputFile().ifPresent(f -> map.put("outputFile", f.toString()));
         return map;
     }
 
@@ -258,6 +372,41 @@ public class ApplicationService {
             + ",portMax=" + properties.getAgentPortMax()
             + ",evaluateEnabled=" + properties.getEvaluate().isEnabled()
             + ",responseFile=" + portFile.toAbsolutePath();
+    }
+
+    /**
+     * Where the {@code -javaagent} argument goes: right after the java launcher
+     * ({@code java}, {@code javaw}, with or without a path or {@code .exe}), so a
+     * wrapper in front of it — {@code env VAR=value java -jar app.jar} — keeps
+     * working. Falls back to after the first token when there is no such launcher.
+     */
+    static int agentArgIndex(List<String> args) {
+        for (int i = 0; i < args.size(); i++) {
+            // Plain string handling: tokens such as -Dx=<y> are not valid paths everywhere.
+            String token = args.get(i).replace('\\', '/');
+            String name = token.substring(token.lastIndexOf('/') + 1).toLowerCase(java.util.Locale.ROOT);
+            if (name.equals("java") || name.equals("java.exe") || name.equals("javaw") || name.equals("javaw.exe")) {
+                return i + 1;
+            }
+        }
+        return 1;
+    }
+
+    /** Builds the process for the launch command, applying the working directory and extra environment. */
+    static ProcessBuilder processBuilder(List<String> args, String workingDir, Map<String, String> env) {
+        ProcessBuilder pb = new ProcessBuilder(args);
+        if (workingDir != null && !workingDir.isBlank()) {
+            pb.directory(Path.of(workingDir).toFile());
+        }
+        if (env != null) {
+            env.forEach((name, value) -> {
+                if (name == null || name.isBlank()) {
+                    throw new IllegalArgumentException("Environment variable names must not be empty");
+                }
+                pb.environment().put(name, value == null ? "" : value);
+            });
+        }
+        return pb;
     }
 
     /**

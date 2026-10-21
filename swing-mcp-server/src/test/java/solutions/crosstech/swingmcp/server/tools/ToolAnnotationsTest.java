@@ -32,7 +32,7 @@ class ToolAnnotationsTest {
     private static final Set<String> READ_ONLY = Set.of(
         "take_snapshot", "find_component", "get_component_details", "get_table_data",
         "get_list_items", "list_windows", "list_dialogs", "list_sessions", "app_status",
-        "get_clipboard", "take_screenshot", "wait_for");
+        "get_clipboard", "take_screenshot", "wait_for", "get_app_output");
 
     /** Tools whose own effect is irreversible, independent of the target application. */
     private static final Set<String> DESTRUCTIVE = Set.of("stop_app", "close_window", "evaluate_java");
@@ -66,7 +66,7 @@ class ToolAnnotationsTest {
                     t.name() + ": this server drives a local application; openWorldHint must be false");
             }
         }
-        assertEquals(40, count, "tool count changed — update the docs and this test deliberately");
+        assertEquals(41, count, "tool count changed — update the docs and this test deliberately");
     }
 
     @Test

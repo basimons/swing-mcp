@@ -5,18 +5,30 @@ interaction tools rely on component UIDs produced by `take_snapshot`.
 
 ## `take_snapshot`
 
-Take a snapshot of the active window's component tree. Every component
-gets a stable UID (e.g. `comp-42`) that interaction tools use to address it.
+Take a snapshot of the active window's component tree, or of the subtree
+below one component. Every component gets a stable UID (e.g. `comp-42`) that
+interaction tools use to address it.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `windowIndex` | number | no | Index of the window to snapshot (from `list_windows`); defaults to the active window |
 | `filter` | string | no | State filter to reduce snapshot size: `ALL` (default), `VISIBLE_ONLY`, `ENABLED_ONLY`, `FOCUSABLE_ONLY` |
+| `uid` | string | no | Snapshot only the subtree rooted at this component |
+| `maxDepth` | number | no | Maximum depth below the root to descend (default unlimited); `1` returns the root and its direct children |
 | `maxNodes` | number | no | Cap on the number of component nodes returned (default 2000). Prevents a huge UI from overflowing the client's context window |
-| `maxDepth` | number | no | Maximum tree depth to descend (default unlimited) |
 
 **Returns:** a tree of components with, per node: UID, component class, name,
-text/label, and key state flags. When the tree was cut short by `maxNodes` or
+text/label, tooltip (when it differs from the text), and key state flags. When
+the tree was cut short by `maxNodes` or `maxDepth`, the root carries
+`"truncated": true`, and every node whose children were cut off by `maxDepth`
+carries `omittedChildren` (the number of direct children left out).
+
+**Exploring a large window:** start with a small `maxDepth` (e.g. 3), then call
+`take_snapshot` again with the `uid` of a node that reports `omittedChildren`
+to expand just that part of the tree. `find_component` is the shortcut when you
+already know a text, name, tooltip, or class.
+text/label, and key state flags. Components of anonymous classes are reported
+by their first named superclass, e.g. `JTabbedPane (anonymous)`. When the tree was cut short by `maxNodes` or
 `maxDepth`, the root carries `"truncated": true` — narrow the request (a
 `filter`, a smaller `maxDepth`, or `find_component`) to see the rest.
 
@@ -39,8 +51,8 @@ Get detailed information about a single component.
 |---|---|---|---|
 | `uid` | string | yes | Component UID from a snapshot |
 
-**Returns:** component class, text, bounds, enabled / visible / focusable
-flags, selection state, and accessibility metadata.
+**Returns:** component class, text, tooltip, bounds, enabled / visible /
+focusable flags, selection state, and accessibility metadata.
 
 ## `find_component`
 
@@ -55,6 +67,13 @@ expensive or noisy.
 
 **Returns:** the matching components (across all visible windows) with their
 UIDs, class, text, and bounds.
+
+**Notes:**
+- `CLASS` matches the component's class and its superclasses (up to
+  `JComponent` / `Control`), so `JTable` also finds `JTable` subclasses and an
+  anonymous `new JTabbedPane() { ... }` is found by `TabbedPane`. An anonymous
+  class also answers to its name without the package (e.g. `MainFrame$1`), and a
+  query containing a dot is compared against the fully qualified class name.
 
 ## `get_table_data`
 

@@ -25,7 +25,7 @@ description: Uses Swing MCP for efficient debugging, troubleshooting and automat
 
 1. Connect: `launch_app` or `attach_to_app`
 2. Snapshot: `take_snapshot` to understand the component tree and collect UIDs
-3. Interact: Use component `uid`s from the snapshot for `click`, `fill`, `select_option`, etc.
+3. Interact: Use component `uid`s from the snapshot for `click`, `fill`, `select_option`, etc. For content drawn inside a single component (chart points, canvas items), pass `x`/`y` offsets to `click`/`hover`/`drag`; for Ctrl/Shift-clicks pass `modifiers`
 4. Wait: `wait_for` to synchronise on UI state changes (`COMPONENT_TEXT`, `COMPONENT_VISIBLE`, `WINDOW_TITLE`, `EDT_IDLE`, …) instead of sleeping
 5. Re-snapshot: take a fresh `take_snapshot` after any action that changes the UI
 
@@ -33,16 +33,20 @@ description: Uses Swing MCP for efficient debugging, troubleshooting and automat
 
 - Use `find_component` (by `TEXT`, `NAME`, `TOOLTIP`, `CLASS`, or `ANY`) to locate a component without paying for a full snapshot
 - Use `take_snapshot` with `filter` (`VISIBLE_ONLY`, `ENABLED_ONLY`, `FOCUSABLE_ONLY`) to reduce output size
+- For large windows, snapshot with a small `maxDepth` (e.g. 3) first, then pass the `uid` of a node that reports `omittedChildren` to expand only that subtree
+- Icon-only buttons often have no text; their `tooltip` in the snapshot is usually the best label
 - Use `get_table_data` / `get_list_items` with `startRow`/`endRow` (or `startIndex`/`endIndex`) ranges instead of dumping entire models
 - Use `get_component_details` for the full state of a single component instead of re-snapshotting the whole tree
+- When an action has no visible effect, check `get_app_output` (launched apps) for an exception the UI swallowed; pass the last `toLine` as `sinceLine` to read only what is new
 
 ### Tool selection
 
 - **Automation/inspection**: `take_snapshot` (text-based component tree, faster, better for automation)
-- **Visual inspection**: `take_screenshot` (whole window, or a single component via `uid`); the PNG is saved to disk and the path returned — only set `returnImage: true` when the image must be inline
+- **Visual inspection**: `take_screenshot` (whole window, or a single component via `uid`); the PNG is saved to disk and the path returned — only set `returnImage: true` when the image must be inline; the default `PAINT` mode renders the UI even when other windows cover it (use `mode: SCREEN` only for native title bars or heavyweight popups)
 - **Structured data**: `get_table_data` for `JTable`/`TableView`, `get_list_items` for `JList`/`JTree` or `ListView`/`TreeView`
+- **Keyboard**: `press_key` and `type_text` send key events to the application itself, so they work while it is in the background; pass `uid` to target a component directly instead of calling `focus` first. Only use `robot: true` when the application needs OS-level input
 - **Text entry**: `fill` sets a value directly (text components, `JSpinner`, editable `JComboBox` in Swing; `TextInputControl`, `Spinner`, editable `ComboBox` in JavaFX); `type_text` types character-by-character with key events when listeners/validation must fire
-- **Selection**: `select_option` for `JList`/`JComboBox`/`JTabbedPane` (or `ListView`/`ComboBox`/`ChoiceBox`/`TabPane` in JavaFX), `select_tree_node` for `JTree`/`TreeView` paths, `select_table_cell` for `JTable`/`TableView`, `select_menu_item` / `select_context_menu_item` for menus (`JMenuBar`/`JPopupMenu` in Swing, `MenuBar`/`ContextMenu` in JavaFX)
+- **Selection**: `select_option` for `JList`/`JComboBox`/`JTabbedPane` (or `ListView`/`ComboBox`/`ChoiceBox`/`TabPane` in JavaFX), `select_tree_node` for `JTree`/`TreeView` paths, `select_table_cell` for `JTable`/`TableView` (`toggle`/`extend`/`rows` for multi-row selections), `select_menu_item` / `select_context_menu_item` for menus (`JMenuBar`/`JPopupMenu` in Swing, `MenuBar`/`ContextMenu` in JavaFX)
 - **Additional details**: `evaluate_java` (JShell in the target JVM) for state not exposed by the other tools — disabled by default, requires `swing.mcp.evaluate.enabled=true`
 - `drag` and `evaluate_java` are Swing-only
 

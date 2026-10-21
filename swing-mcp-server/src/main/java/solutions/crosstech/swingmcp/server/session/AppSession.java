@@ -3,7 +3,9 @@ package solutions.crosstech.swingmcp.server.session;
 import solutions.crosstech.swingmcp.common.enums.CommandType;
 import solutions.crosstech.swingmcp.server.domain.SessionInfo;
 import java.io.Closeable;
+import java.nio.file.Path;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * A connection to a target Swing application with the swing-mcp agent loaded.
@@ -26,4 +28,12 @@ public sealed interface AppSession extends Closeable permits LaunchedAppSession,
 
     /** Returns true if the underlying target process/connection is still alive. */
     boolean isAlive();
+
+    /**
+     * The file capturing the target's stdout and stderr, when the server owns
+     * the process. Empty for attached sessions, whose output goes elsewhere.
+     */
+    default Optional<Path> outputFile() {
+        return Optional.empty();
+    }
 }

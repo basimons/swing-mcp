@@ -36,6 +36,7 @@ import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.stage.Stage;
 import javafx.stage.Window;
+import solutions.crosstech.swingmcp.agent.ClassNames;
 import solutions.crosstech.swingmcp.common.dto.ComponentDescriptor;
 
 import java.util.ArrayList;
@@ -195,11 +196,9 @@ final class FxScene {
         }
     }
 
+    /** Describes the children of {@code parent}, which sit at {@code depth}. */
     List<ComponentDescriptor> scanChildren(Parent parent, boolean visibleOnly, Budget budget, int depth) {
         List<ComponentDescriptor> out = new ArrayList<>();
-        if (!budget.deeper(depth)) {
-            return out;
-        }
         for (Node child : parent.getChildrenUnmodifiable()) {
             ComponentDescriptor d = describe(child, visibleOnly, budget, depth);
             if (d != null) {
@@ -221,6 +220,7 @@ final class FxScene {
         }
 
         List<ComponentDescriptor> children;
+        Integer omitted = null;
         if (node instanceof Control control) {
             // A Control is a leaf: its value comes from its API, not its skin.
             List<Node> content = contentOf(control);
@@ -232,30 +232,57 @@ final class FxScene {
                         children.add(d);
                     }
                 }
+            } else if (!content.isEmpty()) {
+                omitted = content.size();
             }
             if (control instanceof MenuBar bar) {
                 children.addAll(describeMenus(bar.getMenus()));
             }
         } else if (node instanceof Parent p) {
-            children = scanChildren(p, visibleOnly, budget, depth + 1);
+            // Same depth rule as for Control content and the Swing scanner:
+            // children at depth + 1 are included while depth < maxDepth.
+            if (budget.deeper(depth)) {
+                children = scanChildren(p, visibleOnly, budget, depth + 1);
+            } else {
+                children = List.of();
+                long below = p.getChildrenUnmodifiable().stream().filter(c -> !isSkinInternal(c)).count();
+                omitted = below > 0 ? (int) below : null;
+            }
         } else {
             children = List.of();
         }
+        if (omitted != null) {
+            // Cut by maxDepth: say how much is below so the client can drill in by uid.
+            budget.truncated = true;
+        }
 
+        String text = textOf(node);
+        String tooltip = tooltipOf(node);
         Bounds b = node.getBoundsInParent();
         return new ComponentDescriptor(
             uidFor(node),
-            node.getClass().getSimpleName(),
+            ClassNames.displayName(node.getClass()),
             node.getId(),
-            textOf(node),
+            text,
+            tooltip != null && tooltip.equals(text) ? null : tooltip,
             !node.isDisabled(),
             node.isVisible(),
             node.isFocusTraversable(),
             (int) b.getMinX(), (int) b.getMinY(),
             (int) b.getWidth(), (int) b.getHeight(),
             selectionStateOf(node),
-            children.isEmpty() ? null : children
+            children.isEmpty() ? null : children,
+            omitted
         );
+    }
+
+    /** The tooltip text of a control, if it has one. */
+    static String tooltipOf(Node node) {
+        if (node instanceof Control c && c.getTooltip() != null) {
+            String tip = c.getTooltip().getText();
+            return tip == null || tip.isBlank() ? null : tip;
+        }
+        return null;
     }
 
     /** Menus are not Nodes, so they get their own descriptors. */
@@ -267,7 +294,7 @@ final class FxScene {
                 : List.of();
             out.add(new ComponentDescriptor(
                 uidFor(item),
-                item.getClass().getSimpleName(),
+                ClassNames.displayName(item.getClass()),
                 item.getId(),
                 item.getText(),
                 !item.isDisable(),
@@ -415,7 +442,7 @@ final class FxScene {
         if (w instanceof Stage s) {
             return s.getTitle() == null ? "" : s.getTitle();
         }
-        return w.getClass().getSimpleName();
+        return ClassNames.displayName(w.getClass());
     }
 
     static boolean isModal(Window w) {

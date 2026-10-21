@@ -4,7 +4,9 @@ import solutions.crosstech.swingmcp.common.enums.AttachMode;
 import solutions.crosstech.swingmcp.common.enums.CommandType;
 import solutions.crosstech.swingmcp.server.domain.SessionInfo;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -16,16 +18,31 @@ public final class LaunchedAppSession implements AppSession {
     private final Process process;
     private final AgentConnection connection;
     private final SessionInfo info;
+    private final Path outputFile;
 
     public LaunchedAppSession(Process process, AgentConnection connection, int agentPort, String description) {
+        this(process, connection, agentPort, description, null);
+    }
+
+    /**
+     * @param outputFile the file the process's stdout and stderr are redirected to, or null
+     */
+    public LaunchedAppSession(Process process, AgentConnection connection, int agentPort, String description,
+                              Path outputFile) {
         this.process = process;
         this.connection = connection;
         this.info = new SessionInfo(AttachMode.LAUNCHED, process.pid(), agentPort, description);
+        this.outputFile = outputFile;
     }
 
     @Override
     public SessionInfo info() {
         return info;
+    }
+
+    @Override
+    public Optional<Path> outputFile() {
+        return Optional.ofNullable(outputFile);
     }
 
     @Override

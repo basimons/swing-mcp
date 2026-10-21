@@ -23,11 +23,16 @@ public class SnapshotTools {
         Take a snapshot of the active window's component tree (Swing or JavaFX; both may be present). \
         Each component gets a stable UID used by interaction tools — "comp-42" for Swing, "fx-7" for JavaFX; \
         pass it back exactly as given. In JavaFX a Control is one node; its skin internals are omitted. \
+        For large windows use maxDepth, then pass a node's uid to expand just that subtree; \
+        nodes cut off by maxDepth report omittedChildren. \
         Always take a fresh snapshot after actions that change the UI.""")
     public String takeSnapshot(
             @McpToolParam(description = "Optional index of the window to snapshot (from list_windows)", required = false) Integer windowIndex,
-            @McpToolParam(description = "Optional state filter to reduce snapshot size: ALL (default), VISIBLE_ONLY, ENABLED_ONLY, FOCUSABLE_ONLY", required = false) String filter) {
-        return ToolJson.toJson(snapshotService.takeSnapshot(windowIndex, filter));
+            @McpToolParam(description = "Optional state filter to reduce snapshot size: ALL (default), VISIBLE_ONLY, ENABLED_ONLY, FOCUSABLE_ONLY", required = false) String filter,
+            @McpToolParam(description = "Optional component UID: snapshot only the subtree rooted at it", required = false) String uid,
+            @McpToolParam(description = "Optional maximum tree depth below the root (default unlimited)", required = false) Integer maxDepth,
+            @McpToolParam(description = "Optional cap on the number of nodes returned (default 2000)", required = false) Integer maxNodes) {
+        return ToolJson.toJson(snapshotService.takeSnapshot(windowIndex, filter, uid, maxDepth, maxNodes));
     }
 
     @McpTool(name = "get_component_details",
@@ -44,6 +49,7 @@ public class SnapshotTools {
         annotations = @McpTool.McpAnnotations(title = "Find component", readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false),
         description = """
         Find components by text, name, tooltip, or class without taking a full snapshot. \
+        CLASS also matches superclasses, so "JTable" finds JTable subclasses. \
         Returns matching components with their UIDs. Useful for very large component trees.""")
     public String findComponent(
             @McpToolParam(description = "Search string (case-insensitive substring match)") String query,

@@ -133,9 +133,15 @@ public class ToolkitRegistry {
         return false;
     }
 
-    /** Routes by uid prefix, falling back to {@link #primary()} when there is no uid. */
+    /**
+     * Routes by uid prefix — {@code uid}, or {@code fromUid} for a drag — falling
+     * back to {@link #primary()} when there is none.
+     */
     public UiToolkit forParams(Map<String, Object> params) {
         Object uid = params == null ? null : params.get("uid");
+        if (uid == null && params != null) {
+            uid = params.get("fromUid");
+        }
         if (uid != null) {
             return forUid(String.valueOf(uid));
         }

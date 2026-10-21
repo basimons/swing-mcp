@@ -16,6 +16,7 @@ it back through a response file.
 | `command` | string | yes | Full java command line, e.g. `java -jar /path/to/app.jar` |
 | `workingDir` | string | no | Working directory for the launched process |
 | `sessionId` | string | no | Session id; auto-generated when omitted. Reusing an id replaces (and closes) that session |
+| `env` | object | no | Environment variables for the launched process, e.g. `{"HDF5_PLUGIN_PATH": "./plugins"}`. Added to (and overriding) the server's environment, for this launch only |
 
 **Returns:** session info (session id, mode, PID, agent port). The new session
 becomes the active one.
@@ -25,6 +26,14 @@ becomes the active one.
   variable) to point at the swing-mcp-agent shaded jar.
 - A launched application is terminated when the session is closed with
   `stop_app`.
+- The `-javaagent` argument is inserted right after the java launcher (`java`,
+  `javaw`, with or without a path or `.exe`), so JVM options belong in `command`
+  after it, and a wrapper in front of it keeps working, e.g.
+  `env HDF5_PLUGIN_PATH=./plugins java -jar app.jar`. When the command contains no
+  java launcher, the argument goes after the first token.
+- Use `env` for variables an application's own launcher script would normally
+  set (native library paths, plugin directories): without them, an application
+  may start but fail silently later.
 
 ## `attach_to_app`
 
@@ -85,4 +94,29 @@ Get the status of the active application session.
 No parameters.
 
 **Returns:** `connected`, `sessionId`, `sessionCount`, `alive`, `mode`
-(`LAUNCHED`/`ATTACHED`), `pid`, `agentPort`, `description`.
+(`LAUNCHED`/`ATTACHED`), `pid`, `agentPort`, `description`, and for a launched
+application `outputFile`, the file its stdout and stderr are captured in.
+
+## `get_app_output`
+
+Read the captured stdout and stderr of an application started with
+`launch_app`: stack traces and log lines are often the only trace of an error
+the UI swallows.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `tail` | number | no | Number of last lines to return (default 50, max 500) |
+| `sinceLine` | number | no | Return the lines after this line number instead of a tail |
+| `sessionId` | string | no | Session id; the active session when omitted |
+
+**Returns:** `sessionId`, `alive`, `outputFile`, `totalLines`, `fromLine` and
+`toLine` (1-based line numbers of the returned block), `text`, and `more: true`
+when lines after `toLine` were left out.
+
+**Notes:**
+- To follow the output, pass the previous call's `toLine` as `sinceLine`.
+- A call returns at most 500 lines and about 40,000 characters.
+- Only launched applications have captured output; for an application attached
+  by PID the tool returns an error, because its output goes wherever it was
+  started from.
+- `launch_app` and `list_sessions` also report `outputFile`.

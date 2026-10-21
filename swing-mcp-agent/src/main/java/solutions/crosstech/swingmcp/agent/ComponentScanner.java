@@ -70,21 +70,30 @@ public class ComponentScanner {
     private final ConcurrentHashMap<String, Component> uidToComponent = new ConcurrentHashMap<>();
     private final Map<Component, String> componentToUid = new WeakHashMap<>();
     private Window activeWindow;
+    /** Component the last event-based hover entered; EDT only. Weak, so it cannot pin a closed window. */
+    private java.lang.ref.WeakReference<Component> lastHovered = new java.lang.ref.WeakReference<>(null);
 
-    /**
-     * Takes a snapshot of the current active window's component tree.
-     *
-     * @param params optional params (may contain "windowIndex")
-     * @return a {@link SnapshotNode} with full component tree
-     */
     /** Default cap on the number of component nodes returned by a single snapshot. */
     private static final int DEFAULT_MAX_NODES = 2000;
     /** Cap on wheel notches per command, so one call cannot keep the EDT busy indefinitely. */
     private static final int MAX_WHEEL_NOTCHES = 100;
 
+    /**
+     * Takes a snapshot of the current active window's component tree.
+     *
+     * @param params optional params: windowIndex, filter, maxNodes, maxDepth, and
+     *               uid to snapshot only the subtree rooted at that component
+     * @return a {@link SnapshotNode} with the component tree
+     */
     public SnapshotNode takeSnapshot(Map<String, Object> params) {
-        Window win = getTargetWindow(params);
-        if (win == null) {
+        String uid = (String) params.get("uid");
+        Component root = uid == null || uid.isBlank() ? null : resolveUid(uid);
+        Window win = root == null ? getTargetWindow(params)
+            : root instanceof Window w ? w : SwingUtilities.getWindowAncestor(root);
+        if (root == null) {
+            root = win;
+        }
+        if (root == null) {
             return new SnapshotNode("No window", "null", 0, 0, 0, 0, List.of());
         }
         ComponentStateFilter filter = ComponentStateFilter.valueOf(
@@ -92,11 +101,16 @@ public class ComponentScanner {
         int maxNodes = params.containsKey("maxNodes") ? getInt(params, "maxNodes", DEFAULT_MAX_NODES) : DEFAULT_MAX_NODES;
         int maxDepth = params.containsKey("maxDepth") ? getInt(params, "maxDepth", Integer.MAX_VALUE) : Integer.MAX_VALUE;
         ScanBudget budget = new ScanBudget(Math.max(1, maxNodes), maxDepth);
-        List<ComponentDescriptor> children = scanComponent(win, filter, budget, 0);
+        List<ComponentDescriptor> children = scanComponent(root, filter, budget, 0);
+        if (win == null) {
+            // A detached component: no window to report, only the subtree.
+            return new SnapshotNode("No window", "null", 0, 0, 0, 0, children,
+                budget.truncated ? Boolean.TRUE : null);
+        }
         Rectangle bounds = win.getBounds();
         return new SnapshotNode(
             getWindowTitle(win),
-            win.getClass().getSimpleName(),
+            ClassNames.displayName(win.getClass()),
             bounds.x, bounds.y, bounds.width, bounds.height,
             children,
             budget.truncated ? Boolean.TRUE : null
@@ -137,7 +151,7 @@ public class ComponentScanner {
                 Map<String, Object> info = new LinkedHashMap<>();
                 info.put("index", index++);
                 info.put("title", getWindowTitle(w));
-                info.put("class", w.getClass().getSimpleName());
+                info.put("class", ClassNames.displayName(w.getClass()));
                 Rectangle b = w.getBounds();
                 info.put("x", b.x);
                 info.put("y", b.y);
@@ -202,24 +216,43 @@ public class ComponentScanner {
 
     /**
      * Takes a screenshot of the active window or a specific component.
+     *
+     * <p>Called off the EDT. Pending events are processed first, so the image
+     * reflects the last action rather than lagging one repaint behind. Mode
+     * {@code PAINT} (default) renders the component into an image on the EDT:
+     * nothing covering it ends up in the picture and it works for windows in the
+     * background. Mode {@code SCREEN} copies the screen region with {@code Robot},
+     * for when native rendering, window decorations or heavyweight popups matter.</p>
      */
-    public Map<String, Object> takeScreenshot(Map<String, Object> params) throws IOException, AWTException {
-        if (GraphicsEnvironment.isHeadless()) {
-            throw new IllegalStateException("Cannot take screenshot in headless environment");
+    public Map<String, Object> takeScreenshot(Map<String, Object> params) throws Exception {
+        String mode = getString(params, "mode", "PAINT").toUpperCase();
+        if (!mode.equals("PAINT") && !mode.equals("SCREEN")) {
+            throw new IllegalArgumentException("Unknown screenshot mode: " + mode + ". Use PAINT or SCREEN.");
         }
-        Component target;
-        String uid = (String) params.get("uid");
-        if (uid != null && !uid.isBlank()) {
-            target = resolveUid(uid);
-        } else {
-            target = getTargetWindow(params);
+        if (mode.equals("SCREEN") && GraphicsEnvironment.isHeadless()) {
+            throw new IllegalStateException("Cannot capture the screen in a headless environment; use mode PAINT");
         }
-        if (target == null) {
-            throw new IllegalStateException("No target component or window for screenshot");
-        }
-        Robot robot = new Robot();
-        Rectangle bounds = new Rectangle(target.getLocationOnScreen(), target.getSize());
-        BufferedImage img = robot.createScreenCapture(bounds);
+        awaitIdleEventQueue();
+        BufferedImage img = invokeAndWaitQuietly(() -> {
+            Component target;
+            String uid = (String) params.get("uid");
+            if (uid != null && !uid.isBlank()) {
+                target = resolveUid(uid);
+            } else {
+                target = getTargetWindow(params);
+            }
+            if (target == null) {
+                throw new IllegalStateException("No target component or window for screenshot");
+            }
+            if (mode.equals("PAINT")) {
+                return paintToImage(target);
+            }
+            if (!target.isShowing()) {
+                throw new IllegalStateException("Component is not on screen; use mode PAINT to render it anyway");
+            }
+            // Robot.createScreenCapture only reads pixels; it does not wait for the EDT.
+            return new Robot().createScreenCapture(new Rectangle(target.getLocationOnScreen(), target.getSize()));
+        });
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(img, "PNG", baos);
         String base64 = Base64.getEncoder().encodeToString(baos.toByteArray());
@@ -228,38 +261,233 @@ public class ComponentScanner {
         result.put("mimeType", "image/png");
         result.put("width", img.getWidth());
         result.put("height", img.getHeight());
+        result.put("mode", mode);
         return result;
     }
 
     /**
-     * Clicks a component identified by UID.
+     * Renders a component, or a window's content, into an image. Must run on the EDT.
+     * A Swing window is rendered through its root pane (menu bar, content, and
+     * lightweight popups), without the native title bar.
+     */
+    private BufferedImage paintToImage(Component target) {
+        Component painted = target instanceof javax.swing.RootPaneContainer rpc && rpc.getRootPane() != null
+            ? rpc.getRootPane() : target;
+        int width = painted.getWidth();
+        int height = painted.getHeight();
+        if (width <= 0 || height <= 0) {
+            throw new IllegalStateException("Component has no size (" + width + "x" + height
+                + "); it is probably not laid out or not displayed");
+        }
+        BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = img.createGraphics();
+        try {
+            // Non-opaque components show their ancestors' background on screen.
+            g.setColor(backgroundOf(painted));
+            g.fillRect(0, 0, width, height);
+            if (painted.isShowing()) {
+                // paintAll also renders heavyweight children (e.g. an AWT Canvas).
+                painted.paintAll(g);
+            } else {
+                painted.paint(g);
+            }
+        } finally {
+            g.dispose();
+        }
+        return img;
+    }
+
+    private static java.awt.Color backgroundOf(Component comp) {
+        for (Component c = comp; c != null; c = c.getParent()) {
+            if (c.isOpaque() && c.getBackground() != null) {
+                return c.getBackground();
+            }
+        }
+        return comp.getBackground() != null ? comp.getBackground() : java.awt.Color.WHITE;
+    }
+
+    /**
+     * Lets the EDT process what is already queued (listeners, revalidation,
+     * repaints posted by the last action) before an image is taken. Bounded, so a
+     * busy application cannot stall the screenshot.
+     */
+    private void awaitIdleEventQueue() throws Exception {
+        if (SwingUtilities.isEventDispatchThread()) {
+            return;
+        }
+        java.awt.EventQueue queue = Toolkit.getDefaultToolkit().getSystemEventQueue();
+        long deadline = System.currentTimeMillis() + 1000;
+        do {
+            SwingUtilities.invokeAndWait(() -> { });
+        } while (queue.peekEvent() != null && System.currentTimeMillis() < deadline);
+    }
+
+    /**
+     * Clicks a component identified by UID. Runs on the EDT.
+     *
+     * <p>A plain left click on a button is a {@code doClick()}. Anything else is
+     * a mouse click at {@code x}/{@code y} (relative to the component's top-left
+     * corner, default its center) with optional {@code modifiers}, delivered as
+     * mouse events to the component under that point, so it works while the
+     * window is covered or in the background. {@code robot=true} moves the real
+     * mouse instead, for code that needs OS-level input.</p>
      */
     public String click(Map<String, Object> params) throws AWTException {
         String uid = getString(params, "uid");
         Component comp = resolveUid(uid);
-        String buttonStr = getString(params, "button", "LEFT");
-        String clickTypeStr = getString(params, "clickType", "SINGLE");
+        String buttonStr = getString(params, "button", "LEFT").toUpperCase();
+        int clicks = "DOUBLE".equalsIgnoreCase(getString(params, "clickType", "SINGLE")) ? 2 : 1;
+        int modifiers = parseModifiers(getString(params, "modifiers", ""));
+        boolean robot = getBoolean(params, "robot", false);
+        boolean atPoint = params.get("x") != null || params.get("y") != null;
 
-        if (comp instanceof AbstractButton btn) {
+        if (comp instanceof AbstractButton btn && "LEFT".equals(buttonStr) && modifiers == 0 && !robot && !atPoint) {
             btn.doClick();
             return "Clicked button: " + btn.getText();
         }
-
-        if (!GraphicsEnvironment.isHeadless()) {
-            Robot robot = new Robot();
-            Point loc = comp.getLocationOnScreen();
-            int cx = loc.x + comp.getWidth() / 2;
-            int cy = loc.y + comp.getHeight() / 2;
-            int mask = getMouseMask(buttonStr);
-            robot.mouseMove(cx, cy);
-            robot.mousePress(mask);
-            robot.mouseRelease(mask);
-            if ("DOUBLE".equalsIgnoreCase(clickTypeStr)) {
-                robot.mousePress(mask);
-                robot.mouseRelease(mask);
+        Point p = pointIn(comp, params, "x", "y");
+        if (robot) {
+            robotClick(comp, p, getMouseMask(buttonStr), clicks, modifiers);
+        } else {
+            Component target = dispatchClick(comp, p, mouseButton(buttonStr), clicks, modifiers);
+            if (target != comp) {
+                return "Clicked " + simpleNameOf(target) + " inside " + uid + " at (" + p.x + "," + p.y + ")";
             }
         }
-        return "Clicked component: " + uid;
+        return "Clicked component: " + uid + " at (" + p.x + "," + p.y + ")";
+    }
+
+    private static String simpleNameOf(Component c) {
+        String name = c.getClass().getSimpleName();
+        return name.isEmpty() ? c.getClass().getName() : name;
+    }
+
+    /**
+     * The point a pointer command targets, relative to {@code comp}: the given
+     * coordinates, or the center for any that are missing. Must lie inside it.
+     */
+    private Point pointIn(Component comp, Map<String, Object> params, String xKey, String yKey) {
+        int x = getInt(params, xKey, comp.getWidth() / 2);
+        int y = getInt(params, yKey, comp.getHeight() / 2);
+        if (x < 0 || y < 0 || x >= comp.getWidth() || y >= comp.getHeight()) {
+            throw new IllegalArgumentException("Point (" + x + "," + y + ") is outside the component, which is "
+                + comp.getWidth() + "x" + comp.getHeight() + "; " + xKey + "/" + yKey
+                + " are relative to its top-left corner");
+        }
+        return new Point(x, y);
+    }
+
+    /**
+     * Delivers a click as mouse events to the deepest component at {@code p}
+     * (relative to {@code comp}), like the real mouse would. Must run on the EDT.
+     *
+     * @return the component that received the events
+     */
+    private Component dispatchClick(Component comp, Point p, int button, int clicks, int modifiers) {
+        Component target = deepestAt(comp, p);
+        Point tp = SwingUtilities.convertPoint(comp, p, target);
+        int buttonMask = InputEvent.getMaskForButton(button);
+        boolean rightButton = button == MouseEvent.BUTTON3;
+        // Windows reports the popup trigger on release, other platforms on press.
+        boolean triggerOnRelease = System.getProperty("os.name", "").startsWith("Windows");
+        long now = System.currentTimeMillis();
+        target.dispatchEvent(new MouseEvent(target, MouseEvent.MOUSE_MOVED, now, modifiers,
+            tp.x, tp.y, 0, false, MouseEvent.NOBUTTON));
+        for (int count = 1; count <= clicks; count++) {
+            target.dispatchEvent(new MouseEvent(target, MouseEvent.MOUSE_PRESSED, now, modifiers | buttonMask,
+                tp.x, tp.y, count, rightButton && !triggerOnRelease, button));
+            target.dispatchEvent(new MouseEvent(target, MouseEvent.MOUSE_RELEASED, now, modifiers,
+                tp.x, tp.y, count, rightButton && triggerOnRelease, button));
+            target.dispatchEvent(new MouseEvent(target, MouseEvent.MOUSE_CLICKED, now, modifiers,
+                tp.x, tp.y, count, false, button));
+        }
+        return target;
+    }
+
+    private static Component deepestAt(Component comp, Point p) {
+        Component deepest = SwingUtilities.getDeepestComponentAt(comp, p.x, p.y);
+        return deepest != null ? deepest : comp;
+    }
+
+    private void robotClick(Component comp, Point p, int buttonMask, int clicks, int modifiers) throws AWTException {
+        requireShowing(comp);
+        Robot robot = new Robot();
+        Point loc = comp.getLocationOnScreen();
+        List<Integer> keys = modifierKeys(modifiers);
+        keys.forEach(robot::keyPress);
+        try {
+            robot.mouseMove(loc.x + p.x, loc.y + p.y);
+            for (int i = 0; i < clicks; i++) {
+                robot.mousePress(buttonMask);
+                robot.mouseRelease(buttonMask);
+            }
+        } finally {
+            for (int i = keys.size() - 1; i >= 0; i--) {
+                robot.keyRelease(keys.get(i));
+            }
+        }
+    }
+
+    private static void requireShowing(Component comp) {
+        if (GraphicsEnvironment.isHeadless()) {
+            throw new IllegalStateException("robot input needs a display");
+        }
+        if (!comp.isShowing()) {
+            throw new IllegalStateException("Component is not on screen, so the real mouse cannot reach it; "
+                + "omit robot to deliver the events directly");
+        }
+    }
+
+    /**
+     * Parses modifier names such as {@code "CTRL+SHIFT"} into an extended
+     * modifier mask. {@code SHORTCUT} is the platform's menu shortcut key
+     * (Ctrl, or Cmd on macOS).
+     */
+    static int parseModifiers(String modifiers) {
+        int mask = 0;
+        for (String part : modifiers.toUpperCase().split("[+,\\s]+")) {
+            mask |= switch (part) {
+                case "" -> 0;
+                case "CTRL", "CONTROL" -> InputEvent.CTRL_DOWN_MASK;
+                case "SHIFT" -> InputEvent.SHIFT_DOWN_MASK;
+                case "ALT", "OPTION" -> InputEvent.ALT_DOWN_MASK;
+                case "META", "CMD", "COMMAND" -> InputEvent.META_DOWN_MASK;
+                case "ALT_GRAPH", "ALTGR" -> InputEvent.ALT_GRAPH_DOWN_MASK;
+                case "SHORTCUT" -> GraphicsEnvironment.isHeadless()
+                    ? InputEvent.CTRL_DOWN_MASK : Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+                default -> throw new IllegalArgumentException("Unknown modifier: " + part
+                    + ". Use CTRL, SHIFT, ALT, META (Cmd), or SHORTCUT, combined with '+'");
+            };
+        }
+        return mask;
+    }
+
+    private static List<Integer> modifierKeys(int modifiers) {
+        List<Integer> keys = new ArrayList<>();
+        if ((modifiers & InputEvent.CTRL_DOWN_MASK) != 0) {
+            keys.add(KeyEvent.VK_CONTROL);
+        }
+        if ((modifiers & InputEvent.SHIFT_DOWN_MASK) != 0) {
+            keys.add(KeyEvent.VK_SHIFT);
+        }
+        if ((modifiers & InputEvent.ALT_DOWN_MASK) != 0) {
+            keys.add(KeyEvent.VK_ALT);
+        }
+        if ((modifiers & InputEvent.META_DOWN_MASK) != 0) {
+            keys.add(KeyEvent.VK_META);
+        }
+        if ((modifiers & InputEvent.ALT_GRAPH_DOWN_MASK) != 0) {
+            keys.add(KeyEvent.VK_ALT_GRAPH);
+        }
+        return keys;
+    }
+
+    private static int mouseButton(String button) {
+        return switch (button.toUpperCase()) {
+            case "RIGHT" -> MouseEvent.BUTTON3;
+            case "MIDDLE" -> MouseEvent.BUTTON2;
+            default -> MouseEvent.BUTTON1;
+        };
     }
 
     /**
@@ -277,7 +505,7 @@ public class ComponentScanner {
         } else if (comp instanceof JComboBox<?> combo && combo.isEditable()) {
             combo.setSelectedItem(text);
         } else {
-            throw new IllegalArgumentException("Component " + uid + " does not support text input: " + comp.getClass().getSimpleName());
+            throw new IllegalArgumentException("Component " + uid + " does not support text input: " + ClassNames.displayName(comp.getClass()));
         }
         return "Filled: " + uid;
     }
@@ -336,7 +564,7 @@ public class ComponentScanner {
                 tabs.setSelectedIndex(match);
             }
         } else {
-            throw new IllegalArgumentException("Component " + uid + " does not support option selection: " + comp.getClass().getSimpleName());
+            throw new IllegalArgumentException("Component " + uid + " does not support option selection: " + ClassNames.displayName(comp.getClass()));
         }
         return "Option selected on: " + uid;
     }
@@ -364,19 +592,56 @@ public class ComponentScanner {
     }
 
     /**
-     * Selects a table cell by row and column.
+     * Selects a table cell by row and column, like a mouse click on it.
+     * Params: uid, row, col (default 0), toggle (Ctrl/Cmd-click), extend
+     * (Shift-click), or rows (a list of rows that becomes the whole selection).
      */
     public String selectTableCell(Map<String, Object> params) {
         String uid = getString(params, "uid");
         Component comp = resolveUid(uid);
-        int row = getInt(params, "row", 0);
         int col = getInt(params, "col", 0);
+        boolean toggle = getBoolean(params, "toggle", false);
+        boolean extend = getBoolean(params, "extend", false);
 
         if (!(comp instanceof JTable table)) {
             throw new IllegalArgumentException("Component " + uid + " is not a JTable");
         }
-        table.changeSelection(row, col, false, false);
-        return "Table cell selected: [" + row + "," + col + "]";
+        requireIndex("col", col, table.getColumnCount());
+        if (params.get("rows") instanceof List<?> rows) {
+            if (toggle || extend) {
+                throw new IllegalArgumentException("rows replaces the whole selection; "
+                    + "it cannot be combined with toggle or extend");
+            }
+            table.clearSelection();
+            boolean first = true;
+            for (Object r : new java.util.LinkedHashSet<>(rows)) {
+                int row = r instanceof Number n ? n.intValue() : Integer.parseInt(String.valueOf(r));
+                requireIndex("row", row, table.getRowCount());
+                table.changeSelection(row, col, !first, false);
+                first = false;
+            }
+        } else {
+            if (params.get("row") == null) {
+                throw new IllegalArgumentException("Provide row (optionally with toggle or extend) or rows");
+            }
+            int row = getInt(params, "row", 0);
+            requireIndex("row", row, table.getRowCount());
+            table.changeSelection(row, col, toggle, extend);
+        }
+        String selection = "Table selection: rows " + java.util.Arrays.toString(table.getSelectedRows())
+            + ", column " + table.getSelectedColumn();
+        if (table.getSelectionModel().getSelectionMode() == javax.swing.ListSelectionModel.SINGLE_SELECTION
+            && (toggle || extend || params.get("rows") instanceof List<?> l && l.size() > 1)) {
+            selection += " (this table allows only one selected row)";
+        }
+        return selection;
+    }
+
+    private static void requireIndex(String what, int index, int count) {
+        if (index < 0 || index >= count) {
+            throw new IllegalArgumentException(what + " " + index + " is out of range; the table has "
+                + count + (what.equals("row") ? " row(s)" : " column(s)"));
+        }
     }
 
     /**
@@ -415,43 +680,294 @@ public class ComponentScanner {
     }
 
     /**
-     * Sends a key press (e.g. "CTRL+S", "ENTER") using Robot.
+     * Presses a key or chord (e.g. "CTRL+S", "ENTER"). Called off the EDT.
+     *
+     * <p>By default the key events are dispatched straight to the component that
+     * has keyboard focus in the application (or to {@code uid}), not through the
+     * operating system: they reach the application while it is in the background
+     * and can never end up in another application. {@code robot=true} sends
+     * OS-level keystrokes with {@code java.awt.Robot} instead, and only once the
+     * target window is in front.</p>
      */
-    public String pressKey(Map<String, Object> params) throws AWTException {
+    public String pressKey(Map<String, Object> params) throws Exception {
         String keys = getString(params, "keys");
-        if (GraphicsEnvironment.isHeadless()) {
-            throw new IllegalStateException("Cannot press keys in headless environment");
+        List<Key> chord = parseKeyChord(keys);
+        if (getBoolean(params, "robot", false)) {
+            ensureForeground(invokeAndWaitQuietly(() -> windowOf(keyTarget(params))));
+            Robot robot = new Robot();
+            for (Key key : chord) {
+                robot.keyPress(key.code());
+            }
+            for (int i = chord.size() - 1; i >= 0; i--) {
+                robot.keyRelease(chord.get(i).code());
+            }
+            return "Key pressed: " + keys;
         }
-        Robot robot = new Robot();
-        List<Integer> keyCodes = parseKeyChord(keys);
-        for (int code : keyCodes) {
-            robot.keyPress(code);
+        Component target = invokeAndWaitQuietly(() -> keyTarget(params));
+        invokeAndWaitQuietly(() -> {
+            dispatchChord(target, chord);
+            return null;
+        });
+        return "Key pressed: " + keys + " (sent to " + describeKeyTarget(target) + ")";
+    }
+
+    /** A key of a chord: its key code and the character it types, if any. */
+    private record Key(int code, char ch) {
+        boolean isModifier() {
+            return modifierMask(code) != 0;
         }
-        for (int i = keyCodes.size() - 1; i >= 0; i--) {
-            robot.keyRelease(keyCodes.get(i));
-        }
-        return "Key pressed: " + keys;
+    }
+
+    private static int modifierMask(int keyCode) {
+        return switch (keyCode) {
+            case KeyEvent.VK_SHIFT -> InputEvent.SHIFT_DOWN_MASK;
+            case KeyEvent.VK_CONTROL -> InputEvent.CTRL_DOWN_MASK;
+            case KeyEvent.VK_ALT -> InputEvent.ALT_DOWN_MASK;
+            case KeyEvent.VK_META -> InputEvent.META_DOWN_MASK;
+            case KeyEvent.VK_ALT_GRAPH -> InputEvent.ALT_GRAPH_DOWN_MASK;
+            default -> 0;
+        };
     }
 
     /**
-     * Drags from one component to another using Robot.
+     * Dispatches a chord the way the keyboard produces it: modifiers pressed in
+     * order, then each key pressed, typed (when it produces a character and no
+     * Ctrl/Alt/Meta is held) and released, then the modifiers released. Must
+     * run on the EDT.
      */
-    public String drag(Map<String, Object> params) throws AWTException {
-        String fromUid = getString(params, "fromUid");
-        String toUid = getString(params, "toUid");
-        if (GraphicsEnvironment.isHeadless()) {
-            throw new IllegalStateException("Cannot drag in headless environment");
+    private void dispatchChord(Component target, List<Key> chord) {
+        int mask = 0;
+        long now = System.currentTimeMillis();
+        List<Key> modifiers = chord.stream().filter(Key::isModifier).toList();
+        for (Key mod : modifiers) {
+            mask |= modifierMask(mod.code());
+            dispatchKey(target, KeyEvent.KEY_PRESSED, now, mask, mod.code(), KeyEvent.CHAR_UNDEFINED);
         }
+        boolean shift = (mask & InputEvent.SHIFT_DOWN_MASK) != 0;
+        boolean command = (mask & (InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK
+            | InputEvent.META_DOWN_MASK)) != 0;
+        for (Key key : chord) {
+            if (key.isModifier()) {
+                continue;
+            }
+            char ch = key.ch() == KeyEvent.CHAR_UNDEFINED || !Character.isLetter(key.ch()) ? key.ch()
+                : shift ? Character.toUpperCase(key.ch()) : Character.toLowerCase(key.ch());
+            dispatchKey(target, KeyEvent.KEY_PRESSED, now, mask, key.code(), ch);
+            if (ch != KeyEvent.CHAR_UNDEFINED && !command) {
+                dispatchKey(target, KeyEvent.KEY_TYPED, now, mask, KeyEvent.VK_UNDEFINED, ch);
+            }
+            dispatchKey(target, KeyEvent.KEY_RELEASED, now, mask, key.code(), ch);
+        }
+        for (int i = modifiers.size() - 1; i >= 0; i--) {
+            mask &= ~modifierMask(modifiers.get(i).code());
+            dispatchKey(target, KeyEvent.KEY_RELEASED, now, mask, modifiers.get(i).code(), KeyEvent.CHAR_UNDEFINED);
+        }
+    }
+
+    /**
+     * Dispatches one key event directly to {@code target}. Not posted to the event
+     * queue, so it is neither retargeted to the (possibly absent) system focus owner
+     * nor held back by pending focus changes; the focus manager still applies focus
+     * traversal keys, key bindings and accelerators.
+     */
+    private static void dispatchKey(Component target, int id, long when, int modifiers, int code, char ch) {
+        target.dispatchEvent(new KeyEvent(target, id, when, modifiers, code, ch));
+    }
+
+    /**
+     * The component key events go to: {@code uid} (which is given focus within its
+     * window), else the application's focus owner, else the most recent focus owner
+     * of the open modal dialog or the target window. Must run on the EDT.
+     */
+    private Component keyTarget(Map<String, Object> params) {
+        String uid = (String) params.get("uid");
+        Component target;
+        if (uid != null && !uid.isBlank()) {
+            target = resolveUid(uid);
+            if (!target.hasFocus()) {
+                target.requestFocusInWindow();
+            }
+        } else {
+            target = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+            if (target == null) {
+                // The application is not active (normal while an agent drives it from an
+                // editor): use what would get focus once its window is activated.
+                Window win = keyWindow(params);
+                target = win.getMostRecentFocusOwner();
+                if (target == null) {
+                    target = win instanceof javax.swing.RootPaneContainer rpc ? rpc.getRootPane() : win;
+                }
+            }
+        }
+        if (!target.isShowing()) {
+            throw new IllegalStateException("The component that would receive the keys ("
+                + describeKeyTarget(target) + ") is not on screen");
+        }
+        markFocusedTextComponent(target);
+        return target;
+    }
+
+    /**
+     * Some text actions act on "the focused text component" rather than the event
+     * source — JTextField's ENTER action fires only for it. Swing records that
+     * component in a focus listener every JTextComponent installs; in a window
+     * without keyboard focus no field ever gains focus, so ENTER would do nothing.
+     * Notifying just that listener records the key target, as clicking into the
+     * field would, without touching real focus or other focus listeners.
+     */
+    private static void markFocusedTextComponent(Component target) {
+        if (!(target instanceof JTextComponent text) || text.hasFocus()) {
+            return;
+        }
+        for (java.awt.event.FocusListener listener : text.getFocusListeners()) {
+            if (listener.getClass().getName().equals("javax.swing.text.JTextComponent$MutableCaretEvent")) {
+                listener.focusGained(new java.awt.event.FocusEvent(text, java.awt.event.FocusEvent.FOCUS_GAINED));
+            }
+        }
+    }
+
+    /** An open modal dialog takes the keyboard, as it would for a user. */
+    private Window keyWindow(Map<String, Object> params) {
+        if (params.get("windowIndex") == null) {
+            List<Window> visible = getVisibleWindows();
+            for (int i = visible.size() - 1; i >= 0; i--) {
+                if (visible.get(i) instanceof Dialog d && d.isModal()) {
+                    return d;
+                }
+            }
+        }
+        Window win = getTargetWindow(params);
+        if (win == null) {
+            throw new IllegalStateException("No window to send keys to");
+        }
+        return win;
+    }
+
+    private static Window windowOf(Component c) {
+        return c instanceof Window w ? w : SwingUtilities.getWindowAncestor(c);
+    }
+
+    private String describeKeyTarget(Component c) {
+        String type = c.getClass().getSimpleName().isEmpty() ? c.getClass().getName() : c.getClass().getSimpleName();
+        return assignUid(c) + " " + type + (c.getName() == null ? "" : " '" + c.getName() + "'");
+    }
+
+    /**
+     * Brings {@code win} to the front for OS-level input, or fails: Robot events go
+     * to whatever application is in front, so sending them to a background window
+     * would type into another application. Called off the EDT.
+     */
+    private void ensureForeground(Window win) throws Exception {
+        if (GraphicsEnvironment.isHeadless()) {
+            throw new IllegalStateException("robot input needs a display");
+        }
+        if (win == null) {
+            throw new IllegalStateException("No window to send keys to");
+        }
+        if (Boolean.TRUE.equals(invokeAndWaitQuietly(win::isFocused))) {
+            return;
+        }
+        invokeAndWaitQuietly(() -> {
+            // Window.toFront() does not activate a background application on macOS.
+            if (java.awt.Desktop.isDesktopSupported() && java.awt.Desktop.getDesktop()
+                    .isSupported(java.awt.Desktop.Action.APP_REQUEST_FOREGROUND)) {
+                java.awt.Desktop.getDesktop().requestForeground(true);
+            }
+            win.toFront();
+            win.requestFocus();
+            return null;
+        });
+        long deadline = System.currentTimeMillis() + 1500;
+        while (System.currentTimeMillis() < deadline) {
+            if (Boolean.TRUE.equals(invokeAndWaitQuietly(win::isFocused))) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        throw new IllegalStateException("The application window could not be brought to the front, so "
+            + "OS-level keystrokes would go to another application. Omit robot to send the keys "
+            + "to the application directly.");
+    }
+
+    /** Intermediate positions of a drag, so drag listeners and gesture thresholds see motion. */
+    private static final int DRAG_STEPS = 10;
+
+    /**
+     * Drags with the left button from a point in one component to a point in
+     * another (or the same) component. Called off the EDT.
+     *
+     * <p>Points are {@code fromX}/{@code fromY} and {@code toX}/{@code toY},
+     * relative to each component's top-left corner, default its center;
+     * {@code toUid} defaults to {@code fromUid}. By default the press, drag and
+     * release are delivered as mouse events to the component under the start
+     * point, as AWT does for a real drag; this covers drags inside a component
+     * (sliders, dividers, chart zoom, canvas handles). Native drag-and-drop
+     * between components needs the real mouse: {@code robot=true}.</p>
+     */
+    public String drag(Map<String, Object> params) throws Exception {
+        String fromUid = getString(params, "fromUid");
+        String toUid = getString(params, "toUid", fromUid);
+        boolean robot = getBoolean(params, "robot", false);
         Component from = resolveUid(fromUid);
         Component to = resolveUid(toUid);
+        Point[] points = invokeAndWaitQuietly(() -> new Point[] {
+            pointIn(from, params, "fromX", "fromY"), pointIn(to, params, "toX", "toY")});
+        String done = "Dragged from " + fromUid + " (" + points[0].x + "," + points[0].y + ") to "
+            + toUid + " (" + points[1].x + "," + points[1].y + ")";
+        if (robot) {
+            robotDrag(from, points[0], to, points[1]);
+            return done;
+        }
+        invokeAndWaitQuietly(() -> {
+            dispatchDrag(from, points[0], to, points[1]);
+            return null;
+        });
+        return done;
+    }
+
+    private void dispatchDrag(Component from, Point fromP, Component to, Point toP) {
+        Component source = deepestAt(from, fromP);
+        Point start = SwingUtilities.convertPoint(from, fromP, source);
+        // AWT keeps sending drag and release events to the pressed component,
+        // in its own coordinates, wherever the mouse goes.
+        Point end = SwingUtilities.convertPoint(to, toP, source);
+        long now = System.currentTimeMillis();
+        int down = InputEvent.BUTTON1_DOWN_MASK;
+        source.dispatchEvent(new MouseEvent(source, MouseEvent.MOUSE_MOVED, now, 0,
+            start.x, start.y, 0, false, MouseEvent.NOBUTTON));
+        source.dispatchEvent(new MouseEvent(source, MouseEvent.MOUSE_PRESSED, now, down,
+            start.x, start.y, 1, false, MouseEvent.BUTTON1));
+        for (int i = 1; i <= DRAG_STEPS; i++) {
+            int x = start.x + (end.x - start.x) * i / DRAG_STEPS;
+            int y = start.y + (end.y - start.y) * i / DRAG_STEPS;
+            source.dispatchEvent(new MouseEvent(source, MouseEvent.MOUSE_DRAGGED, now, down,
+                x, y, 1, false, MouseEvent.NOBUTTON));
+        }
+        source.dispatchEvent(new MouseEvent(source, MouseEvent.MOUSE_RELEASED, now, 0,
+            end.x, end.y, 1, false, MouseEvent.BUTTON1));
+    }
+
+    private void robotDrag(Component from, Point fromP, Component to, Point toP) throws Exception {
+        Point[] screen = invokeAndWaitQuietly(() -> {
+            requireShowing(from);
+            requireShowing(to);
+            Point a = from.getLocationOnScreen();
+            Point b = to.getLocationOnScreen();
+            return new Point[] {new Point(a.x + fromP.x, a.y + fromP.y), new Point(b.x + toP.x, b.y + toP.y)};
+        });
         Robot robot = new Robot();
-        Point fromLoc = from.getLocationOnScreen();
-        Point toLoc = to.getLocationOnScreen();
-        robot.mouseMove(fromLoc.x + from.getWidth() / 2, fromLoc.y + from.getHeight() / 2);
+        robot.setAutoDelay(15);
+        robot.mouseMove(screen[0].x, screen[0].y);
         robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
-        robot.mouseMove(toLoc.x + to.getWidth() / 2, toLoc.y + to.getHeight() / 2);
-        robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
-        return "Dragged from " + fromUid + " to " + toUid;
+        try {
+            // Several moves: drag-and-drop only starts after the gesture threshold is passed.
+            for (int i = 1; i <= DRAG_STEPS; i++) {
+                robot.mouseMove(screen[0].x + (screen[1].x - screen[0].x) * i / DRAG_STEPS,
+                    screen[0].y + (screen[1].y - screen[0].y) * i / DRAG_STEPS);
+            }
+        } finally {
+            robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+        }
     }
 
     /**
@@ -534,25 +1050,6 @@ public class ComponentScanner {
                 0, false, MouseWheelEvent.WHEEL_UNIT_SCROLL, 3, notch, notch));
         }
         return target;
-    }
-
-    /** Parses a modifier chord such as "CTRL+SHIFT" into extended modifier masks. */
-    private int parseModifiers(String modifiers) {
-        int mask = 0;
-        for (String part : modifiers.split("\\+")) {
-            if (part.isBlank()) {
-                continue;
-            }
-            mask |= switch (part.trim().toUpperCase()) {
-                case "CTRL", "CONTROL" -> InputEvent.CTRL_DOWN_MASK;
-                case "SHIFT" -> InputEvent.SHIFT_DOWN_MASK;
-                case "ALT" -> InputEvent.ALT_DOWN_MASK;
-                case "META", "CMD", "COMMAND" -> InputEvent.META_DOWN_MASK;
-                default -> throw new IllegalArgumentException("Unknown modifier: " + part
-                    + ". Use CTRL, SHIFT, ALT or META.");
-            };
-        }
-        return mask;
     }
 
     /**
@@ -664,7 +1161,7 @@ public class ComponentScanner {
             }
         }
         if (any || "CLASS".equals(by)) {
-            if (comp.getClass().getSimpleName().toLowerCase().contains(query)) {
+            if (ClassNames.matches(comp.getClass(), query, true)) {
                 return true;
             }
         }
@@ -746,18 +1243,44 @@ public class ComponentScanner {
     }
 
     /**
-     * Moves the mouse over a component to trigger hover effects and tooltips.
+     * Moves the mouse over a component, at {@code x}/{@code y} (default its
+     * center), to trigger hover effects and tooltips. Called off the EDT.
+     * Delivered as mouse-entered/moved events to the component under the point
+     * unless {@code robot=true}, which moves the real mouse.
      */
-    public String hover(Map<String, Object> params) throws AWTException {
+    public String hover(Map<String, Object> params) throws Exception {
         String uid = getString(params, "uid");
         Component comp = resolveUid(uid);
-        if (GraphicsEnvironment.isHeadless()) {
-            throw new IllegalStateException("Cannot hover in headless environment");
+        boolean robot = getBoolean(params, "robot", false);
+        Point p = invokeAndWaitQuietly(() -> pointIn(comp, params, "x", "y"));
+        if (robot) {
+            Point screen = invokeAndWaitQuietly(() -> {
+                requireShowing(comp);
+                Point loc = comp.getLocationOnScreen();
+                return new Point(loc.x + p.x, loc.y + p.y);
+            });
+            new Robot().mouseMove(screen.x, screen.y);
+        } else {
+            invokeAndWaitQuietly(() -> {
+                Component target = deepestAt(comp, p);
+                Point tp = SwingUtilities.convertPoint(comp, p, target);
+                long now = System.currentTimeMillis();
+                Component previous = lastHovered.get();
+                if (previous != null && previous != target && previous.isDisplayable()) {
+                    // As the real mouse would: leave the last component first, ending its
+                    // rollover state and tooltip.
+                    previous.dispatchEvent(new MouseEvent(previous, MouseEvent.MOUSE_EXITED, now, 0,
+                        -1, -1, 0, false, MouseEvent.NOBUTTON));
+                }
+                lastHovered = new java.lang.ref.WeakReference<>(target);
+                target.dispatchEvent(new MouseEvent(target, MouseEvent.MOUSE_ENTERED, now, 0,
+                    tp.x, tp.y, 0, false, MouseEvent.NOBUTTON));
+                target.dispatchEvent(new MouseEvent(target, MouseEvent.MOUSE_MOVED, now, 0,
+                    tp.x, tp.y, 0, false, MouseEvent.NOBUTTON));
+                return null;
+            });
         }
-        Robot robot = new Robot();
-        Point loc = comp.getLocationOnScreen();
-        robot.mouseMove(loc.x + comp.getWidth() / 2, loc.y + comp.getHeight() / 2);
-        return "Hovering over: " + uid;
+        return "Hovering over: " + uid + " at (" + p.x + "," + p.y + ")";
     }
 
     /**
@@ -779,23 +1302,51 @@ public class ComponentScanner {
 
     /**
      * Types text character-by-character into the focused component using key events.
-     * Params: text (required), uid (optional - focus this component first).
+     * Params: text (required), uid (optional - focus this component first), robot
+     * (optional - OS-level keystrokes, see {@link #pressKey}). Called off the EDT.
+     *
+     * <p>Each character is dispatched as pressed/typed/released in its own EDT
+     * turn, so work the application queues from its key listeners runs between
+     * keystrokes, as it does for a typist. Unlike Robot, any character can be
+     * typed, whatever the keyboard layout.</p>
      */
     public String typeText(Map<String, Object> params) throws Exception {
         String text = getString(params, "text");
-        String uid = (String) params.get("uid");
-        if (GraphicsEnvironment.isHeadless()) {
-            throw new IllegalStateException("Cannot type text in headless environment");
+        if (getBoolean(params, "robot", false)) {
+            ensureForeground(invokeAndWaitQuietly(() -> windowOf(keyTarget(params))));
+            Robot robot = new Robot();
+            robot.setAutoDelay(20);
+            for (char ch : text.toCharArray()) {
+                typeChar(robot, ch);
+            }
+            return "Typed " + text.length() + " characters";
         }
-        if (uid != null && !uid.isBlank()) {
-            invokeAndWaitQuietly(() -> focus(Map.of("uid", uid)));
-        }
-        Robot robot = new Robot();
-        robot.setAutoDelay(20);
+        Component target = invokeAndWaitQuietly(() -> keyTarget(params));
         for (char ch : text.toCharArray()) {
-            typeChar(robot, ch);
+            invokeAndWaitQuietly(() -> {
+                typeCharEvents(target, ch);
+                return null;
+            });
         }
-        return "Typed " + text.length() + " characters";
+        return "Typed " + text.length() + " characters into " + describeKeyTarget(target);
+    }
+
+    private static void typeCharEvents(Component target, char ch) {
+        // As in typeChar: the shift state assumes a US layout, but the character
+        // itself is delivered exactly, so the inserted text is right on any layout.
+        boolean shift = Character.isUpperCase(ch) || "~!@#$%^&*()_+{}|:\"<>?".indexOf(ch) >= 0;
+        int code = KeyEvent.getExtendedKeyCodeForChar(ch);
+        int mask = shift ? InputEvent.SHIFT_DOWN_MASK : 0;
+        long now = System.currentTimeMillis();
+        if (shift) {
+            dispatchKey(target, KeyEvent.KEY_PRESSED, now, mask, KeyEvent.VK_SHIFT, KeyEvent.CHAR_UNDEFINED);
+        }
+        dispatchKey(target, KeyEvent.KEY_PRESSED, now, mask, code, ch);
+        dispatchKey(target, KeyEvent.KEY_TYPED, now, mask, KeyEvent.VK_UNDEFINED, ch);
+        dispatchKey(target, KeyEvent.KEY_RELEASED, now, mask, code, ch);
+        if (shift) {
+            dispatchKey(target, KeyEvent.KEY_RELEASED, now, 0, KeyEvent.VK_SHIFT, KeyEvent.CHAR_UNDEFINED);
+        }
     }
 
     private void typeChar(Robot robot, char ch) {
@@ -957,7 +1508,7 @@ public class ComponentScanner {
                 Map<String, Object> info = new LinkedHashMap<>();
                 info.put("index", index);
                 info.put("title", dialog.getTitle());
-                info.put("class", dialog.getClass().getSimpleName());
+                info.put("class", ClassNames.displayName(dialog.getClass()));
                 info.put("modal", dialog.isModal());
                 JOptionPane pane = findDescendant(dialog, JOptionPane.class);
                 JFileChooser chooser = findDescendant(dialog, JFileChooser.class);
@@ -1100,7 +1651,7 @@ public class ComponentScanner {
             throw new IllegalStateException("No active window");
         }
         if (!(win instanceof Frame frame)) {
-            throw new IllegalArgumentException("Active window is not a Frame: " + win.getClass().getSimpleName());
+            throw new IllegalArgumentException("Active window is not a Frame: " + ClassNames.displayName(win.getClass()));
         }
         WindowState state = WindowState.valueOf(getString(params, "state").toUpperCase());
         int extended = switch (state) {
@@ -1164,13 +1715,20 @@ public class ComponentScanner {
                                                     ScanBudget budget, int depth) {
         List<ComponentDescriptor> result = new ArrayList<>();
         List<ComponentDescriptor> children = new ArrayList<>();
-        if (comp instanceof Container container && depth < budget.maxDepth) {
-            for (Component child : container.getComponents()) {
-                if (budget.remaining <= 0) {
-                    budget.truncated = true;
-                    break;
+        Integer omittedChildren = null;
+        if (comp instanceof Container container) {
+            if (depth < budget.maxDepth) {
+                for (Component child : container.getComponents()) {
+                    if (budget.remaining <= 0) {
+                        budget.truncated = true;
+                        break;
+                    }
+                    children.addAll(scanComponent(child, filter, budget, depth + 1));
                 }
-                children.addAll(scanComponent(child, filter, budget, depth + 1));
+            } else if (container.getComponentCount() > 0) {
+                // Cut by maxDepth: say how much is below so the client can drill in by uid.
+                omittedChildren = container.getComponentCount();
+                budget.truncated = true;
             }
         }
         if (!matchesFilter(comp, filter) && children.isEmpty()) {
@@ -1182,19 +1740,22 @@ public class ComponentScanner {
         }
         String uid = assignUid(comp);
         String text = extractText(comp);
+        String tooltip = extractTooltip(comp);
         String selectionState = extractSelectionState(comp);
         Rectangle bounds = comp.getBounds();
         ComponentDescriptor desc = new ComponentDescriptor(
             uid,
-            comp.getClass().getSimpleName(),
+            ClassNames.displayName(comp.getClass()),
             comp.getName(),
             text,
+            tooltip != null && tooltip.equals(text) ? null : tooltip,
             comp.isEnabled(),
             comp.isVisible(),
             comp.isFocusable(),
             bounds.x, bounds.y, bounds.width, bounds.height,
             selectionState,
-            children.isEmpty() ? null : children
+            children.isEmpty() ? null : children,
+            omittedChildren
         );
         result.add(desc);
         return result;
@@ -1254,6 +1815,23 @@ public class ComponentScanner {
         return null;
     }
 
+    /** The component's tooltip as plain text; HTML tooltips are reduced to their text. */
+    private String extractTooltip(Component comp) {
+        if (!(comp instanceof JComponent jc)) {
+            return null;
+        }
+        String tip = jc.getToolTipText();
+        if (tip == null || tip.isBlank()) {
+            return null;
+        }
+        if (tip.regionMatches(true, 0, "<html>", 0, 6)) {
+            tip = tip.replaceAll("(?i)<br\\s*/?>", " ").replaceAll("<[^>]*>", "")
+                .replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+                .replaceAll("\\s+", " ").strip();
+        }
+        return tip.isEmpty() ? null : tip;
+    }
+
     private String extractSelectionState(Component comp) {
         if (comp instanceof JComboBox<?> combo) {
             return String.valueOf(combo.getSelectedIndex());
@@ -1274,9 +1852,13 @@ public class ComponentScanner {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("uid", assignUid(comp));
         info.put("class", comp.getClass().getName());
-        info.put("simpleName", comp.getClass().getSimpleName());
+        info.put("simpleName", ClassNames.displayName(comp.getClass()));
         info.put("name", comp.getName());
         info.put("text", extractText(comp));
+        String tooltip = extractTooltip(comp);
+        if (tooltip != null) {
+            info.put("tooltip", tooltip);
+        }
         info.put("enabled", comp.isEnabled());
         info.put("visible", comp.isVisible());
         info.put("focusable", comp.isFocusable());
@@ -1343,7 +1925,7 @@ public class ComponentScanner {
         if (w instanceof java.awt.Dialog d) {
             return d.getTitle();
         }
-        return w.getClass().getSimpleName();
+        return ClassNames.displayName(w.getClass());
     }
 
     private JScrollPane findScrollPane(Component comp) {
@@ -1574,40 +2156,130 @@ public class ComponentScanner {
         };
     }
 
-    private List<Integer> parseKeyChord(String keys) {
-        List<Integer> codes = new ArrayList<>();
-        for (String part : keys.split("\\+")) {
-            codes.add(switch (part.trim().toUpperCase()) {
-                case "CTRL" -> KeyEvent.VK_CONTROL;
-                case "ALT" -> KeyEvent.VK_ALT;
-                case "SHIFT" -> KeyEvent.VK_SHIFT;
-                case "META" -> KeyEvent.VK_META;
-                case "ENTER" -> KeyEvent.VK_ENTER;
-                case "ESCAPE", "ESC" -> KeyEvent.VK_ESCAPE;
-                case "TAB" -> KeyEvent.VK_TAB;
-                case "SPACE" -> KeyEvent.VK_SPACE;
-                case "BACKSPACE" -> KeyEvent.VK_BACK_SPACE;
-                case "DELETE", "DEL" -> KeyEvent.VK_DELETE;
-                case "UP" -> KeyEvent.VK_UP;
-                case "DOWN" -> KeyEvent.VK_DOWN;
-                case "LEFT" -> KeyEvent.VK_LEFT;
-                case "RIGHT" -> KeyEvent.VK_RIGHT;
+    /**
+     * Parses a chord such as {@code "CTRL+SHIFT+S"}, {@code "ENTER"}, {@code "F5"}
+     * or {@code "PAGE_DOWN"}: modifier and key names, any {@code KeyEvent.VK_*}
+     * name without the prefix, or a single character.
+     */
+    static List<Key> parseKeyChord(String keys) {
+        List<Key> chord = new ArrayList<>();
+        for (String raw : keys.split("\\+")) {
+            String part = raw.trim();
+            String name = part.toUpperCase();
+            chord.add(switch (name) {
+                case "CTRL", "CONTROL" -> new Key(KeyEvent.VK_CONTROL, KeyEvent.CHAR_UNDEFINED);
+                case "ALT", "OPTION" -> new Key(KeyEvent.VK_ALT, KeyEvent.CHAR_UNDEFINED);
+                case "SHIFT" -> new Key(KeyEvent.VK_SHIFT, KeyEvent.CHAR_UNDEFINED);
+                case "META", "CMD", "COMMAND" -> new Key(KeyEvent.VK_META, KeyEvent.CHAR_UNDEFINED);
+                case "SHORTCUT" -> new Key(shortcutKey(), KeyEvent.CHAR_UNDEFINED);
+                case "ENTER", "RETURN" -> new Key(KeyEvent.VK_ENTER, '\n');
+                case "ESCAPE", "ESC" -> new Key(KeyEvent.VK_ESCAPE, (char) 27);
+                case "TAB" -> new Key(KeyEvent.VK_TAB, '\t');
+                case "SPACE" -> new Key(KeyEvent.VK_SPACE, ' ');
+                case "BACKSPACE" -> new Key(KeyEvent.VK_BACK_SPACE, '\b');
+                case "DELETE", "DEL" -> new Key(KeyEvent.VK_DELETE, (char) 127);
+                case "PGUP" -> new Key(KeyEvent.VK_PAGE_UP, KeyEvent.CHAR_UNDEFINED);
+                case "PGDN" -> new Key(KeyEvent.VK_PAGE_DOWN, KeyEvent.CHAR_UNDEFINED);
                 default -> {
-                    String t = part.trim().toUpperCase();
-                    int code = KeyEvent.getExtendedKeyCodeForChar(t.charAt(0));
-                    yield code != KeyEvent.VK_UNDEFINED ? code : (int) t.charAt(0);
+                    if (part.length() == 1) {
+                        char ch = part.charAt(0);
+                        int code = KeyEvent.getExtendedKeyCodeForChar(ch);
+                        if (code == KeyEvent.VK_UNDEFINED) {
+                            throw new IllegalArgumentException("No key for character: " + part);
+                        }
+                        yield new Key(code, ch);
+                    }
+                    yield new Key(namedKeyCode(name, keys), KeyEvent.CHAR_UNDEFINED);
                 }
             });
         }
-        return codes;
+        return chord;
+    }
+
+    /** Looks up {@code KeyEvent.VK_<name>}, e.g. F5, HOME, END, PAGE_UP, INSERT. */
+    private static int namedKeyCode(String name, String keys) {
+        try {
+            return KeyEvent.class.getField("VK_" + name.replace(' ', '_')).getInt(null);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalArgumentException("Unknown key \"" + name + "\" in \"" + keys
+                + "\". Use names such as ENTER, TAB, ESCAPE, F5, HOME, PAGE_DOWN, a single character, "
+                + "and modifiers CTRL, SHIFT, ALT, META, SHORTCUT joined with '+'");
+        }
+    }
+
+    /** The platform's menu shortcut key: Cmd on macOS, Ctrl elsewhere. */
+    private static int shortcutKey() {
+        if (GraphicsEnvironment.isHeadless()) {
+            return KeyEvent.VK_CONTROL;
+        }
+        return Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx() == InputEvent.META_DOWN_MASK
+            ? KeyEvent.VK_META : KeyEvent.VK_CONTROL;
     }
 
     private Object parseSpinnerValue(JSpinner spinner, String text) {
-        javax.swing.SpinnerModel model = spinner.getModel();
-        if (model instanceof javax.swing.SpinnerNumberModel) {
-            return Double.parseDouble(text);
+        return spinnerValue(spinner.getModel(), text);
+    }
+
+    /**
+     * Converts {@code text} to the value a user typing into the spinner would
+     * commit. A {@link javax.swing.SpinnerNumberModel} keeps the number class of
+     * its current value (an integer model stays {@code Integer}), so application
+     * code casting {@code getValue()} keeps working; values outside the model's
+     * bounds are rejected instead of being set silently.
+     */
+    static Object spinnerValue(javax.swing.SpinnerModel model, String text) {
+        if (!(model instanceof javax.swing.SpinnerNumberModel numbers)) {
+            return text;
         }
-        return text;
+        java.math.BigDecimal parsed;
+        try {
+            parsed = new java.math.BigDecimal(text.strip());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Spinner expects a number, got \"" + text + "\"");
+        }
+        Class<?> type = numbers.getNumber() == null ? Double.class : numbers.getNumber().getClass();
+        Number value;
+        try {
+            if (type == Integer.class) {
+                value = parsed.intValueExact();
+            } else if (type == Long.class) {
+                value = parsed.longValueExact();
+            } else if (type == Short.class) {
+                value = parsed.shortValueExact();
+            } else if (type == Byte.class) {
+                value = parsed.byteValueExact();
+            } else if (type == java.math.BigInteger.class) {
+                value = parsed.toBigIntegerExact();
+            } else if (type == java.math.BigDecimal.class) {
+                value = parsed;
+            } else if (type == Float.class) {
+                value = parsed.floatValue();
+            } else {
+                value = parsed.doubleValue();
+            }
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException("Spinner holds " + type.getSimpleName()
+                + " values; \"" + text + "\" is not a whole number in that range");
+        }
+        if (outOfBounds(numbers.getMinimum(), value, true) || outOfBounds(numbers.getMaximum(), value, false)) {
+            throw new IllegalArgumentException("Value " + value + " is outside the spinner's range ["
+                + numbers.getMinimum() + ", " + numbers.getMaximum() + "]");
+        }
+        return value;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static boolean outOfBounds(Comparable bound, Number value, boolean lower) {
+        if (bound == null) {
+            return false;
+        }
+        try {
+            int cmp = bound.compareTo(value);
+            return lower ? cmp > 0 : cmp < 0;
+        } catch (ClassCastException e) {
+            // Bound of a different Number class than the value: let the model decide.
+            return false;
+        }
     }
 
     private String getString(Map<String, Object> params, String key) {
@@ -1632,6 +2304,17 @@ public class ComponentScanner {
             return n.intValue();
         }
         return Integer.parseInt(val.toString());
+    }
+
+    private boolean getBoolean(Map<String, Object> params, String key, boolean defaultVal) {
+        Object val = params.get(key);
+        if (val == null) {
+            return defaultVal;
+        }
+        if (val instanceof Boolean b) {
+            return b;
+        }
+        return Boolean.parseBoolean(val.toString());
     }
 
     private long getLong(Map<String, Object> params, String key, long defaultVal) {

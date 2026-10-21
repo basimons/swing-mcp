@@ -19,6 +19,10 @@ Launch a Java desktop application (Swing or JavaFX) with the swing-mcp agent pre
 | `command` | string | yes | Full java command line, e.g. `java -jar /path/to/app.jar` |
 | `workingDir` | string | no | Working directory for the launched process |
 | `sessionId` | string | no | Session id; auto-generated when omitted |
+| `env` | object | no | Environment variables for the launched process, e.g. `{"HDF5_PLUGIN_PATH": "./plugins"}` |
+
+The `-javaagent` argument goes right after the java launcher, so wrappers such as
+`env VAR=value java -jar app.jar` work and JVM options stay in `command`.
 
 Returns session info (session id, mode, PID, agent port). The new session
 becomes the active one.
@@ -53,7 +57,20 @@ Make a session the active one that other tools operate on.
 
 ### `app_status`
 Get the status of the active session: `connected`, `sessionId`,
-`sessionCount`, `alive`, `mode`, `pid`, `agentPort`, `description`.
+`sessionCount`, `alive`, `mode`, `pid`, `agentPort`, `description`, and
+`outputFile` for a launched application.
+
+### `get_app_output`
+Read the captured stdout/stderr of a launched application: the last lines, or
+the lines after `sinceLine` to follow new output. Returns `totalLines`,
+`fromLine`, `toLine`, `text`, and `more` when lines were left out (at most 500
+lines / ~40,000 characters per call).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `tail` | number | no | Number of last lines (default 50, max 500) |
+| `sinceLine` | number | no | Return the lines after this line number instead |
+| `sessionId` | string | no | Session id; the active session when omitted |
 
 ## Inspection
 
@@ -66,6 +83,13 @@ gets a stable UID (e.g. `comp-42`) used by the interaction tools.
 |---|---|---|---|
 | `windowIndex` | number | no | Window index from `list_windows` |
 | `filter` | string | no | `ALL` (default), `VISIBLE_ONLY`, `ENABLED_ONLY`, `FOCUSABLE_ONLY` |
+| `uid` | string | no | Snapshot only the subtree rooted at this component |
+| `maxDepth` | number | no | Maximum depth below the root (default unlimited) |
+| `maxNodes` | number | no | Cap on returned nodes (default 2000) |
+
+Nodes report `tooltip` when it differs from their text. When `maxDepth` or `maxNodes` cut the tree,
+the root carries `truncated: true`, and nodes whose children were cut by `maxDepth` carry
+`omittedChildren`; snapshot such a node by `uid` to expand it.
 
 ### `get_component_details`
 Detailed information about a single component: class, text, bounds, enabled /
@@ -82,6 +106,10 @@ Find components by text, name, tooltip, or class without a full snapshot.
 |---|---|---|---|
 | `query` | string | yes | Search string (case-insensitive substring match) |
 | `by` | string | no | `TEXT`, `NAME`, `TOOLTIP`, `CLASS`, or `ANY` (default) |
+
+`CLASS` also matches superclasses (so an anonymous `new JTabbedPane() { ... }` is found by
+`TabbedPane`), an anonymous class's own name (`MainFrame$1`), and, for a query containing a dot,
+the fully qualified name. Snapshots report anonymous classes as e.g. `JTabbedPane (anonymous)`.
 
 ### `get_table_data`
 Extract the model contents of a `JTable` (Swing) or `TableView` (JavaFX):
@@ -140,14 +168,18 @@ Close the active window by dispatching a window-closing event.
 ## Interaction
 
 ### `click`
-Click a component. `AbstractButton`s are clicked directly (`doClick`); other
-components via mouse emulation.
+Click a component. A plain left click on a button is a direct `doClick`/`fire`; other clicks are
+delivered as mouse events at `x`/`y` to the component under that point, which works while the window
+is covered or in the background.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `uid` | string | yes | Component UID |
 | `button` | string | no | `LEFT` (default), `RIGHT`, `MIDDLE` |
 | `clickType` | string | no | `SINGLE` (default) or `DOUBLE` |
+| `x` / `y` | number | no | Offset from the component's top-left corner (default: center) |
+| `modifiers` | string | no | `CTRL`, `SHIFT`, `ALT`, `META`, `SHORTCUT`, combined with `+` |
+| `robot` | boolean | no | Swing: use the real OS mouse (window must be in front) |
 
 ### `hover`
 Move the mouse over a component to trigger hover effects and tooltips.
@@ -155,6 +187,8 @@ Move the mouse over a component to trigger hover effects and tooltips.
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `uid` | string | yes | Component UID |
+| `x` / `y` | number | no | Offset from the component's top-left corner (default: center) |
+| `robot` | boolean | no | Swing: use the real OS mouse |
 
 ### `focus`
 Give keyboard focus to a component.
@@ -170,6 +204,7 @@ Type text character-by-character using key events (unlike `fill`).
 |---|---|---|---|
 | `text` | string | yes | Text to type |
 | `uid` | string | no | Component UID to focus before typing |
+| `robot` | boolean | no | Swing: OS-level keystrokes via `Robot` (window must come to the front) |
 
 ### `fill`
 Set the text/value of a text component, `JSpinner`, `JSlider`, or editable
@@ -180,6 +215,9 @@ Set the text/value of a text component, `JSpinner`, `JSlider`, or editable
 |---|---|---|---|
 | `uid` | string | yes | Component UID |
 | `text` | string | yes | Text or value to enter |
+
+A numeric `JSpinner` gets a value of its model's number class (`Integer`, `Double`, …);
+fractions for integer spinners and out-of-range values are rejected.
 
 ### `select_option`
 Select an option in a `JList`, `JComboBox`, or `JTabbedPane` (Swing) — or a
@@ -200,13 +238,17 @@ Select a `JTree` (Swing) or `TreeView` (JavaFX) node by path.
 | `path` | string | yes | Node path, e.g. `Root > Folder > Leaf` |
 
 ### `select_table_cell`
-Select a `JTable` (Swing) or `TableView` (JavaFX) cell.
+Select a `JTable` (Swing) or `TableView` (JavaFX) cell, like a click, or several rows.
+Returns the resulting selection.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `uid` | string | yes | `JTable` (Swing) or `TableView` (JavaFX) component UID |
-| `row` | number | yes | Zero-based row |
-| `col` | number | yes | Zero-based column |
+| `row` | number | no | Zero-based row; required unless `rows` is given |
+| `col` | number | no | Zero-based column (default 0) |
+| `toggle` | boolean | no | Add/remove the row from the selection (Ctrl/Cmd-click) |
+| `extend` | boolean | no | Select from the anchor row to `row` (Shift-click) |
+| `rows` | number[] | no | Rows that become the whole selection; `[]` clears it |
 
 ### `select_menu_item`
 Click a menu item in the active window's menu bar (`JMenuBar` for Swing,
@@ -226,20 +268,28 @@ Swing, `ContextMenu` for JavaFX).
 | `path` | string | yes | Menu item path, e.g. `Copy` or `Refactor > Rename` |
 
 ### `press_key`
-Press a key or key chord using AWT `Robot`.
+Press a key or key chord. Keys are delivered as key events to `uid` or to the component with keyboard
+focus in the application, so they work while it is in the background and never reach another
+application.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `keys` | string | yes | e.g. `ENTER`, `TAB`, `CTRL+S` |
+| `keys` | string | yes | e.g. `ENTER`, `TAB`, `F5`, `PAGE_DOWN`, `CTRL+S`, `SHORTCUT+A` |
+| `uid` | string | no | Component to focus and send the keys to |
+| `robot` | boolean | no | Swing: OS-level keystrokes via `Robot`; refused unless the window can be brought to the front |
 
 ### `drag`
-Drag from one component to another using mouse emulation. Swing only; on a
-JavaFX uid this fails with an error saying so.
+Drag from a point in one component to a point in another, or within one component (sliders, dividers,
+chart zoom). Delivered as mouse events; native drag-and-drop between components needs `robot: true`.
+Swing only; on a JavaFX uid this fails with an error saying so.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `fromUid` | string | yes | Source component UID |
-| `toUid` | string | yes | Target component UID |
+| `toUid` | string | no | Target component UID (default: `fromUid`) |
+| `fromX` / `fromY` | number | no | Start point in the source (default: center) |
+| `toX` / `toY` | number | no | End point in the target (default: center) |
+| `robot` | boolean | no | Use the real OS mouse, as native drag-and-drop requires |
 
 ### `scroll`
 Scroll a component inside a `JScrollPane` (Swing) or `ScrollPane` (JavaFX).
@@ -302,6 +352,9 @@ under `swing.mcp.screenshot-dir` and the file path is returned.
 |---|---|---|---|
 | `uid` | string | no | Component UID; omit for the whole window |
 | `returnImage` | boolean | no | When `true`, include the base64-encoded PNG data inline |
+| `mode` | string | no | `PAINT` (default): render the UI, unaffected by overlapping windows, no title bar; `SCREEN`: copy the screen pixels |
+
+Queued UI events are processed before capturing, so the image reflects the last action.
 
 ## Utilities
 

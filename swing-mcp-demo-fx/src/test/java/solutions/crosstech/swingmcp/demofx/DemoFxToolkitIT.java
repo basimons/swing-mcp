@@ -161,6 +161,44 @@ class DemoFxToolkitIT {
     }
 
     @Test
+    @DisplayName("a snapshot can start at a node, stop at a depth, and reports tooltips (#21)")
+    void snapshotScope() throws Exception {
+        SnapshotNode shallow = toolkit.takeSnapshot(Map.of("maxDepth", 1));
+        assertEquals(Boolean.TRUE, shallow.truncated());
+        assertTrue(allNodes(shallow).stream().anyMatch(d -> d.omittedChildren() != null),
+            "a node cut off by maxDepth must say how many children it has");
+
+        String submit = uidOf("submitButton");
+        SnapshotNode subtree = toolkit.takeSnapshot(Map.of("uid", submit));
+        assertEquals(1, subtree.components().size());
+        ComponentDescriptor root = subtree.components().get(0);
+        assertEquals(submit, root.uid());
+        assertEquals("Submit the form", root.tooltip());
+        assertEquals("Submit the form", toolkit.getComponentDetails(Map.of("uid", submit)).get("tooltip"));
+    }
+
+    @Test
+    @DisplayName("the server's VISIBLE_ONLY filter drops invisible nodes (#21)")
+    void visibleOnlyFilter() throws Exception {
+        String status = uidOf("statusLabel");
+        toolkit.invokeOnUiThread(() -> {
+            javafx.stage.Window.getWindows().get(0).getScene().lookup("#statusLabel").setVisible(false);
+            return null;
+        }, 5000);
+        try {
+            List<ComponentDescriptor> all = allNodes(toolkit.takeSnapshot(Map.of("filter", "ALL")));
+            assertTrue(all.stream().anyMatch(d -> d.uid().equals(status)), "ALL keeps the hidden label");
+            List<ComponentDescriptor> visible = allNodes(toolkit.takeSnapshot(Map.of("filter", "VISIBLE_ONLY")));
+            assertTrue(visible.stream().noneMatch(d -> d.uid().equals(status)), "VISIBLE_ONLY must drop it");
+        } finally {
+            toolkit.invokeOnUiThread(() -> {
+                javafx.stage.Window.getWindows().get(0).getScene().lookup("#statusLabel").setVisible(true);
+                return null;
+            }, 5000);
+        }
+    }
+
+    @Test
     @DisplayName("skin internals are filtered out of the snapshot")
     void snapshotExcludesSkinInternals() throws Exception {
         SnapshotNode snapshot = toolkit.takeSnapshot(Map.of());
@@ -259,6 +297,68 @@ class DemoFxToolkitIT {
     }
 
     @Test
+    @DisplayName("table rows can be toggled, extended and set as a whole (#18)")
+    void multiSelectTableRows() throws Exception {
+        toolkit.selectOption(Map.of("uid", uidOf("tabs"), "text", "Data"));
+        String table = uidOf("partsTable");
+        toolkit.selectTableCell(Map.of("uid", table, "row", 0));
+        String toggled = toolkit.selectTableCell(Map.of("uid", table, "row", 2, "toggle", true));
+        assertTrue(toggled.contains("rows [0, 2]"), toggled);
+        String untoggled = toolkit.selectTableCell(Map.of("uid", table, "row", 0, "toggle", true));
+        assertTrue(untoggled.contains("rows [2]"), untoggled);
+        toolkit.selectTableCell(Map.of("uid", table, "row", 0));
+        String extended = toolkit.selectTableCell(Map.of("uid", table, "row", 2, "extend", true));
+        assertTrue(extended.contains("rows [0, 1, 2]"), extended);
+        String rows = toolkit.selectTableCell(Map.of("uid", table, "rows", List.of(1, 2)));
+        assertTrue(rows.contains("rows [1, 2]"), rows);
+    }
+
+    @Test
+    @DisplayName("press_key and type_text accept a target uid (#23)")
+    void keysGoToTheGivenUid() throws Exception {
+        toolkit.selectOption(Map.of("uid", uidOf("tabs"), "text", "Form"));
+        String uid = uidOf("nameField");
+        toolkit.fill(Map.of("uid", uid, "text", ""));
+        toolkit.typeText(Map.of("uid", uid, "text", "Ada"));
+        assertEquals("Ada", toolkit.getComponentDetails(Map.of("uid", uid)).get("text"));
+        Object pressed = toolkit.pressKey(Map.of("uid", uid, "keys", "HOME"));
+        assertTrue(String.valueOf(pressed).contains("HOME"), String.valueOf(pressed));
+    }
+
+    @Test
+    @DisplayName("a click lands at x/y inside the node with modifiers held (#19)")
+    void clickAtPointWithModifiers() throws Exception {
+        toolkit.selectOption(Map.of("uid", uidOf("tabs"), "text", "Data"));
+        String uid = uidOf("cityList");
+        List<javafx.scene.input.MouseEvent> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        javafx.event.EventHandler<javafx.scene.input.MouseEvent> recorder = seen::add;
+        javafx.scene.Node list = toolkit.invokeOnUiThread(() -> {
+            javafx.scene.Node n = javafx.stage.Window.getWindows().get(0).getScene().lookup("#cityList");
+            n.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_CLICKED, recorder);
+            return n;
+        }, 5000);
+        try {
+            toolkit.click(Map.of("uid", uid, "x", 12, "y", 9, "modifiers", "CTRL+SHIFT"));
+            long deadline = System.currentTimeMillis() + 5000;
+            while (seen.isEmpty() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20);
+            }
+            assertFalse(seen.isEmpty(), "no click reached the list");
+            javafx.scene.input.MouseEvent click = seen.get(0);
+            assertEquals(12, click.getX(), 0.5);
+            assertEquals(9, click.getY(), 0.5);
+            assertTrue(click.isControlDown() && click.isShiftDown(), "modifiers held");
+            assertThrows(IllegalArgumentException.class,
+                () -> toolkit.hover(Map.of("uid", uid, "x", 100_000, "y", 0)));
+        } finally {
+            toolkit.invokeOnUiThread(() -> {
+                list.removeEventFilter(javafx.scene.input.MouseEvent.MOUSE_CLICKED, recorder);
+                return null;
+            }, 5000);
+        }
+    }
+
+    @Test
     @DisplayName("list items are readable and selectable")
     void readAndSelectList() throws Exception {
         String uid = uidOf("cityList");
@@ -297,8 +397,8 @@ class DemoFxToolkitIT {
     @DisplayName("a screenshot is produced from the scene graph")
     void screenshot() throws Exception {
         Map<String, Object> shot = toolkit.takeScreenshot(Map.of());
-        assertEquals("png", shot.get("format"));
-        assertNotNull(shot.get("base64"));
+        assertNotNull(shot.get("imageBase64"));
+        assertEquals("image/png", shot.get("mimeType"));
         assertTrue(((Integer) shot.get("width")) > 0);
     }
 

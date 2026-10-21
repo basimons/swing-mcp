@@ -52,7 +52,7 @@ description: Uses Swing MCP to test and verify Java desktop application behavior
 
 ### 6. Drag and drop, and clipboard
 
-- `drag` from a source UID to a target UID to test drag-and-drop behavior (Swing only), then verify the result via snapshots or model data.
+- `drag` from a source UID to a target UID to test drag-and-drop behavior (Swing only), then verify the result via snapshots or model data. Native drag-and-drop between components (lists, trees, `TransferHandler`) needs `robot: true` and the window in front; drags inside one component (sliders, chart zoom) work without it.
 - Use `set_clipboard` + `press_key` with `CTRL+V` to test paste handling, and `get_clipboard` to assert what the app copied after `CTRL+C`.
 
 ### 7. Multi-window scenarios

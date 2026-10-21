@@ -34,12 +34,34 @@ public class SnapshotService {
      * @param filter      optional state filter: ALL, VISIBLE_ONLY, ENABLED_ONLY, FOCUSABLE_ONLY
      */
     public Object takeSnapshot(Integer windowIndex, String filter) {
+        return takeSnapshot(windowIndex, filter, null, null, null);
+    }
+
+    /**
+     * Takes a snapshot of a window's component tree, or of one component's subtree.
+     *
+     * @param windowIndex optional window index; null for the active window
+     * @param filter      optional state filter: ALL, VISIBLE_ONLY, ENABLED_ONLY, FOCUSABLE_ONLY
+     * @param uid         optional component UID; snapshot only the subtree rooted at it
+     * @param maxDepth    optional maximum depth below the root
+     * @param maxNodes    optional cap on the number of nodes returned
+     */
+    public Object takeSnapshot(Integer windowIndex, String filter, String uid, Integer maxDepth, Integer maxNodes) {
         Map<String, Object> params = new HashMap<>();
         if (windowIndex != null) {
             params.put("windowIndex", windowIndex);
         }
         if (filter != null && !filter.isBlank()) {
             params.put("filter", filter);
+        }
+        if (uid != null && !uid.isBlank()) {
+            params.put("uid", uid);
+        }
+        if (maxDepth != null) {
+            params.put("maxDepth", maxDepth);
+        }
+        if (maxNodes != null) {
+            params.put("maxNodes", maxNodes);
         }
         return registry.require().send(CommandType.TAKE_SNAPSHOT, params);
     }

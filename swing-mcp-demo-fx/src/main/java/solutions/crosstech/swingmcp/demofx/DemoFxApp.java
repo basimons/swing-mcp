@@ -127,6 +127,7 @@ public class DemoFxApp extends Application {
 
         Button submit = new Button("Submit");
         submit.setId("submitButton");
+        submit.setTooltip(new javafx.scene.control.Tooltip("Submit the form"));
         submit.setOnAction(e -> result.setText(
             "submitted: " + name.getText()
                 + " / " + country.getValue()
@@ -156,6 +157,7 @@ public class DemoFxApp extends Application {
             new Part("SKU-2", "Gasket", 48),
             new Part("SKU-3", "Filter", 7)));
         table.setId("partsTable");
+        table.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.MULTIPLE);
 
         TableColumn<Part, String> sku = new TableColumn<>("SKU");
         sku.setCellValueFactory(new javafx.scene.control.cell.PropertyValueFactory<>("sku"));

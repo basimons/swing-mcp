@@ -7,16 +7,129 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **`mouse_wheel` tool**: turns the mouse wheel over a component at an optional
-  point, with optional `CTRL`/`SHIFT`/`ALT`/`META`, so graph viewers, charts and
-  maps that zoom or pan on the wheel can be driven. 40 tools in total now.
-- A "Canvas" tab in both demo apps that zooms and pans on the wheel.
-
 ### Changed
+- `take_screenshot` renders the component into an image on the Event Dispatch Thread by
+  default (`mode: PAINT`) instead of copying its screen region. Windows or notifications
+  covering the application no longer end up in the image, background windows and
+  components that are not on screen can be captured, and it works headless. A window is
+  rendered through its root pane, so the native title bar is not included. The previous
+  behaviour is available as `mode: SCREEN`. Either way, events already queued on the UI
+  thread are processed first, so the image no longer lags one repaint behind the last
+  action ([#24](https://github.com/crosstech-solutions-bv/swing-mcp/issues/24)).
+- Swing `press_key` and `type_text` deliver key events straight to the application instead of
+  using `java.awt.Robot`, which sends OS-level keystrokes to whatever application is in front.
+  When the target application was in the background (the normal case when an agent drives it
+  from an editor) keys went to the other application, in the worst case into the user's
+  editor. Keys now go to `uid` (new optional parameter on `press_key`) or to the component
+  with keyboard focus in the application, even while it is inactive, and never to another
+  application. Focus traversal, key bindings, menu accelerators and default buttons behave as
+  for real input, `type_text` can type any character regardless of keyboard layout, and the
+  result names the component that received the keys. A key that opens a modal dialog returns
+  a pending result instead of blocking
+  ([#23](https://github.com/crosstech-solutions-bv/swing-mcp/issues/23)).
+- `type_text` with `uid` no longer brings the window to the front.
+- Swing `click` (other than a plain left click on a button), `hover` and `drag` are delivered
+  as mouse events to the component under the point instead of moving the real mouse. They
+  work while the window is covered or in the background, do not move the user's cursor, and
+  work headless. A click at a point on a container reaches the child under it, a right click
+  is flagged as the popup trigger, and hovering another component sends mouse-exited to the
+  previous one. A right click on a button is now a right click rather than `doClick()`.
+  Native drag-and-drop between components still needs `robot: true`
+  ([#19](https://github.com/crosstech-solutions-bv/swing-mcp/issues/19)).
+- `drag` is routed by `fromUid`, so in an application with both toolkits it reaches the
+  toolkit that owns the source component.
 - `scroll` on a component with no enclosing scroll pane sends mouse-wheel
   notches instead of failing, so custom scrollers (e.g. JUNG's
   `GraphZoomScrollPane`) and JavaFX `ListView`/`TableView`/`TreeView` scroll.
+
+### Fixed
+- `take_screenshot` on a JavaFX window saved a broken file: the JavaFX toolkit returned the
+  image under keys the server did not read (`base64`, `format`), so the server decoded the
+  string `"null"`. It now returns `imageBase64` and `mimeType` like the Swing toolkit, and
+  the server rejects a result without image data instead of writing garbage.
+- `launch_app` inserted the `-javaagent` argument after the first token of the command, so a
+  wrapper in front of `java` broke the launch (`env VAR=value java -jar app.jar` failed with
+  `env: illegal option -- j`). The argument now goes right after the java launcher (`java`,
+  `javaw`, with or without a path or `.exe`), falling back to the old position when the
+  command has none ([#25](https://github.com/crosstech-solutions-bv/swing-mcp/issues/25)).
+- Components of anonymous classes (`new JTabbedPane() { ... }`) could not be found with
+  `find_component` by `CLASS` and were reported with an empty `componentClass` in
+  snapshots, because both relied on `Class.getSimpleName()`. Class matching now covers the
+  component's superclasses up to the toolkit base class (so `TabbedPane` finds an anonymous
+  `JTabbedPane`, and `JTable` finds `JTable` subclasses), an anonymous class's own name
+  (`MainFrame$1`), and, for queries containing a dot, the fully qualified name. Snapshots,
+  `find_component`, `list_windows` and `list_dialogs` report anonymous classes by their first
+  named superclass, e.g. `JTabbedPane (anonymous)`. Applies to Swing and JavaFX
+  ([#20](https://github.com/crosstech-solutions-bv/swing-mcp/issues/20)).
+- `fill` on a numeric `JSpinner` committed a `Double` regardless of the model, so an
+  integer spinner suddenly held a `Double` and application code such as
+  `(Integer) spinner.getValue()` threw a `ClassCastException`. The text is now converted
+  to the class of the model's current value (`Integer`, `Long`, `Short`, `Byte`, `Float`,
+  `Double`, `BigInteger`, `BigDecimal`), and fractions for integer models or values
+  outside the model's bounds are rejected with a clear error, as the spinner's own editor
+  would ([#22](https://github.com/crosstech-solutions-bv/swing-mcp/issues/22)).
+- `press_key` silently pressed the first letter of a key name it did not know (`HOME` pressed
+  `H`, `F5` pressed `F`); unknown names are now rejected with the accepted forms.
+- JavaFX `click` on a node without `fire()` ignored `button` and `clickType` and passed the
+  node-local center as scene coordinates, so handlers saw the wrong position for any node
+  not at the scene origin. Clicks and hovers now carry the right coordinates, button, click
+  count and modifiers.
+- JavaFX snapshots ignored `filter: VISIBLE_ONLY`, because the toolkit compared the filter
+  against `VISIBLE` while the server sends `VISIBLE_ONLY`.
+- In JavaFX snapshots `maxDepth` cut plain containers one level earlier than controls and
+  the Swing scanner; `maxDepth: 1` now returns the root and its direct children everywhere.
+
+### Added
+- `get_app_output` tool: read the captured stdout/stderr of an application started with
+  `launch_app`, either the last `tail` lines or the lines after `sinceLine` to follow new
+  output. Stack traces and log lines of a running application, often the only trace of an
+  error the UI swallows, were previously only shown (last lines) when a launch failed, and
+  an agent had to guess the log file's location in the temp directory. Read-only; at most
+  500 lines and about 40,000 characters per call. The tool count is now 40
+  ([#26](https://github.com/crosstech-solutions-bv/swing-mcp/issues/26)).
+- `launch_app`, `app_status` and `list_sessions` report `outputFile` for launched
+  applications.
+- `launch_app` takes an optional `env` object of environment variables for the launched
+  process, for variables an application's own launcher would normally set (native library
+  or plugin paths). Previously the only way was to set them in the MCP server's own
+  environment, which needs a server restart and applies to every launch
+  ([#25](https://github.com/crosstech-solutions-bv/swing-mcp/issues/25)).
+  - `select_table_cell` can build a multi-selection: `toggle` adds or removes a row
+  (Ctrl/Cmd-click), `extend` selects the range from the anchor (Shift-click), and `rows`
+  sets several selected rows in one call (`[]` clears the selection). The result now
+  reports the resulting selection. `row` and `col` are optional (`col` defaults to 0), and
+  out-of-range indices are rejected instead of being passed to the table. Works for
+  `JTable` and `TableView`; the JavaFX demo table now allows multiple selection
+  ([#18](https://github.com/crosstech-solutions-bv/swing-mcp/issues/18)).
+- `robot: true` on `press_key` and `type_text` keeps OS-level keystrokes for applications that
+  need them; the window is brought to the front first (activating the application on macOS),
+  and the call fails rather than typing into another application if that does not work.
+- `press_key` accepts any `KeyEvent.VK_*` name (`F5`, `HOME`, `END`, `PAGE_UP`, `INSERT`, …),
+  `SHORTCUT` (Ctrl, or Cmd on macOS), and `CMD`/`OPTION` aliases. JavaFX `press_key` and
+  `type_text` accept `uid` too.
+- `click` and `hover` take `x`/`y` (offset from the component's top-left corner, default
+  its center), and `click` takes `modifiers` (`CTRL`, `SHIFT`, `ALT`, `META`, `SHORTCUT`,
+  combined with `+`). Content drawn inside one component (chart points, canvas items,
+  handles) can now be reached, and Ctrl/Shift-clicks are possible. `drag` takes
+  `fromX`/`fromY`/`toX`/`toY`, and `toUid` is optional, for drags inside one component
+  ([#19](https://github.com/crosstech-solutions-bv/swing-mcp/issues/19)).
+- `robot: true` on `click`, `hover` and `drag` moves the real OS mouse with
+  `java.awt.Robot`, the previous behaviour; `drag` with `robot` now moves in steps so native
+  drag-and-drop passes its gesture threshold.
+- `take_snapshot` takes `uid` (snapshot only the subtree below a component), `maxDepth`
+  and `maxNodes`. The agent already honoured the two limits, but the tool did not expose
+  them, so a large window could only be fetched whole (80,000+ characters even with
+  `VISIBLE_ONLY`). Nodes whose children were cut off by `maxDepth` now report
+  `omittedChildren`, and the root reports `truncated` for depth cuts too, so a client can
+  expand exactly the part it needs
+  ([#21](https://github.com/crosstech-solutions-bv/swing-mcp/issues/21)).
+- Snapshot nodes, `find_component` results and `get_component_details` include the
+  component's `tooltip` (HTML reduced to plain text, omitted when equal to the text);
+  for icon-only buttons it is often the only label.
+- **`mouse_wheel` tool**: turns the mouse wheel over a component at an optional
+  point, with optional `CTRL`/`SHIFT`/`ALT`/`META`, so graph viewers, charts and
+  maps that zoom or pan on the wheel can be driven. 41 tools in total now.
+- A "Canvas" tab in both demo apps that zooms and pans on the wheel.
 
 ## [1.3.0] - 2026-09-14
 

@@ -17,7 +17,7 @@ as UIDs from an older snapshot may be stale.
 
 | Category | Documentation | Tools |
 |---|---|---|
-| Application lifecycle | [application.md](application.md) | `launch_app`, `attach_to_app`, `stop_app`, `app_status`, `list_sessions`, `select_session` |
+| Application lifecycle | [application.md](application.md) | `launch_app`, `attach_to_app`, `stop_app`, `app_status`, `get_app_output`, `list_sessions`, `select_session` |
 | Inspection | [inspection.md](inspection.md) | `take_snapshot`, `get_component_details`, `find_component`, `get_table_data`, `get_list_items` |
 | Windows | [windows.md](windows.md) | `list_windows`, `select_window`, `resize_window`, `move_window`, `maximize_window`, `minimize_window`, `restore_window`, `close_window` |
 | Interaction | [interaction.md](interaction.md) | `click`, `hover`, `focus`, `type_text`, `fill`, `select_option`, `select_tree_node`, `select_table_cell`, `select_menu_item`, `select_context_menu_item`, `press_key`, `drag`, `scroll`, `mouse_wheel` |
@@ -34,6 +34,7 @@ as UIDs from an older snapshot may be stale.
 | `attach_to_app` | ✅ Implemented |
 | `stop_app` | ✅ Implemented |
 | `app_status` | ✅ Implemented |
+| `get_app_output` | ✅ Implemented |
 | `list_sessions` | ✅ Implemented |
 | `select_session` | ✅ Implemented |
 | `take_snapshot` | ✅ Implemented |

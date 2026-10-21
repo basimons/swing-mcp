@@ -94,7 +94,8 @@ If the issue is still unclear, run diagnostic commands to test the setup directl
 
 - `java -version` to verify the JDK is 21+.
 - `java -jar /path/to/swing-mcp-server-*.jar` from a terminal to see startup errors directly.
-- Inspect `${java.io.tmpdir}/swing-mcp-server.log` for stack traces.
+- Inspect `${java.io.tmpdir}/swing-mcp-server.log` for stack traces of the server itself.
+- For the launched application's own stdout/stderr (its stack traces and log lines), call `get_app_output`.
 - Test against the bundled demo app: `launch_app` with `java -jar /path/to/swing-mcp-demo-1.3.0.jar`, then `take_snapshot`.
 
 ### Step 6: Check GitHub for Existing Issues

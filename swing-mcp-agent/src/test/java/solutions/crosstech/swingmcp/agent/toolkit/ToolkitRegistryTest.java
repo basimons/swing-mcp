@@ -102,6 +102,14 @@ class ToolkitRegistryTest {
     }
 
     @Test
+    void dragRoutesByItsSourceUid() {
+        // A drag carries fromUid/toUid instead of uid; the primary (focused) toolkit
+        // here is JavaFX, but a drag that starts on a Swing component is Swing's.
+        ToolkitRegistry registry = new ToolkitRegistry(List.of(SWING, FX));
+        assertSame(SWING, registry.forParams(Map.of("fromUid", "comp-3", "toUid", "comp-4")));
+    }
+
+    @Test
     void unknownUidPrefixIsRejectedWithTheValidOnes() {
         ToolkitRegistry registry = new ToolkitRegistry(List.of(SWING, FX));
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,

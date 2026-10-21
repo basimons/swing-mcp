@@ -65,6 +65,7 @@
     { "name": "list_sessions", "description": "List active application sessions" },
     { "name": "select_session", "description": "Switch the active application session" },
     { "name": "app_status", "description": "Report the status of the current session" },
+    { "name": "get_app_output", "description": "Read the stdout/stderr of a launched application" },
     { "name": "take_snapshot", "description": "Snapshot the UI component tree with component UIDs (Swing or JavaFX)" },
     { "name": "get_component_details", "description": "Get detailed properties of a component by UID" },
     { "name": "find_component", "description": "Find components by text, name, tooltip, or class (Swing or JavaFX)" },

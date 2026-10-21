@@ -46,7 +46,7 @@ In chat, the Agent uses the Swing tools when relevant and asks for approval befo
 call by default; you can name a tool explicitly ("use take_snapshot").
 
 Cursor limits how many MCP tools can be active at once (40 at the time of writing, per
-community documentation). Swing MCP exposes 39, so run it with few other servers, or toggle
+community documentation). Swing MCP exposes 40, so run it with few other servers, or toggle
 individual Swing tools off in the same settings panel if tools go missing.
 
 ## 4. First prompt

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import solutions.crosstech.swingmcp.common.command.CommandRequest;
 import solutions.crosstech.swingmcp.common.command.CommandResponse;
 import solutions.crosstech.swingmcp.common.enums.CommandType;
 import solutions.crosstech.swingmcp.server.config.SwingMcpProperties;
@@ -32,6 +33,7 @@ import org.junit.jupiter.api.io.TempDir;
 class ServicesTest {
 
     private final ConcurrentLinkedQueue<CommandType> received = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<CommandRequest> requests = new ConcurrentLinkedQueue<>();
     private FakeAgentServer server;
     private SessionRegistry registry;
     private SwingMcpProperties properties;
@@ -43,6 +45,7 @@ class ServicesTest {
     void setUp() throws Exception {
         server = new FakeAgentServer(req -> {
             received.add(req.type());
+            requests.add(req);
             if (req.type() == CommandType.TAKE_SCREENSHOT) {
                 return new CommandResponse(req.requestId(), true, screenshotPayload(), null);
             }
@@ -74,6 +77,15 @@ class ServicesTest {
             CommandType.TAKE_SNAPSHOT, CommandType.GET_COMPONENT_DETAILS,
             CommandType.FIND_COMPONENT, CommandType.GET_TABLE_DATA,
             CommandType.GET_LIST_ITEMS)));
+    }
+
+    @Test
+    void snapshotServiceForwardsScopeParams() {
+        SnapshotService service = new SnapshotService(registry);
+        service.takeSnapshot(null, null, "comp-7", 2, 50);
+        assertEquals(Map.of("uid", "comp-7", "maxDepth", 2, "maxNodes", 50), requests.poll().params());
+        service.takeSnapshot(1, "VISIBLE_ONLY");
+        assertEquals(Map.of("windowIndex", 1, "filter", "VISIBLE_ONLY"), requests.poll().params());
     }
 
     @Test
@@ -113,6 +125,39 @@ class ServicesTest {
             CommandType.HOVER, CommandType.FOCUS,
             CommandType.TYPE_TEXT, CommandType.SELECT_CONTEXT_MENU_ITEM,
             CommandType.MOUSE_WHEEL)));
+    }
+
+    @Test
+    void selectTableCellForwardsMultiSelectParams() {
+        InteractionService service = new InteractionService(registry);
+        service.selectTableCell("comp-5", 3, null, true, null, null);
+        service.selectTableCell("comp-5", null, 1, null, null, java.util.List.of(0, 2));
+        CommandRequest toggle = requests.poll();
+        assertEquals(Map.of("uid", "comp-5", "row", 3, "toggle", true), toggle.params());
+        CommandRequest rows = requests.poll();
+        assertEquals(Map.of("uid", "comp-5", "col", 1, "rows", java.util.List.of(0, 2)), rows.params());
+    }
+
+    @Test
+    void keyCommandsForwardUidAndRobot() {
+        InteractionService service = new InteractionService(registry);
+        service.pressKey("ENTER", "comp-4", null);
+        assertEquals(Map.of("keys", "ENTER", "uid", "comp-4"), requests.poll().params());
+        service.typeText("abc", null, true);
+        assertEquals(Map.of("text", "abc", "robot", true), requests.poll().params());
+    }
+
+    @Test
+    void pointerCommandsForwardOffsetsModifiersAndRobot() {
+        InteractionService service = new InteractionService(registry);
+        service.click("comp-1", null, null, 10, 20, "CTRL", true);
+        assertEquals(Map.of("uid", "comp-1", "x", 10, "y", 20, "modifiers", "CTRL", "robot", true),
+            requests.poll().params());
+        service.hover("comp-2", 3, null, null);
+        assertEquals(Map.of("uid", "comp-2", "x", 3), requests.poll().params());
+        service.drag("comp-3", null, 1, 2, 30, 40, null);
+        assertEquals(Map.of("fromUid", "comp-3", "fromX", 1, "fromY", 2, "toX", 30, "toY", 40),
+            requests.poll().params());
     }
 
     @Test
